@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.7
+# Multi-arch (linux/arm64 for Oracle Ampere, linux/amd64): one image serves the API, the built
+# SPA (WhiteNoise, same domain) and the Celery worker (ffmpeg included).
+#
+#   docker buildx build --platform linux/arm64,linux/amd64 -f infra/Dockerfile.backend -t echo:latest .
+
+# ---- 1. Frontend build ---------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+# ---- 2. Python base ------------------------------------------------------------------------
+FROM python:3.12-slim AS base
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+WORKDIR /app/backend
+COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
+
+# ---- 3. Dev image (source mounted as a volume) ---------------------------------------------
+FROM base AS dev
+RUN uv sync --frozen --no-install-project
+COPY backend/ ./
+EXPOSE 8000
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+# ---- 4. Production image -------------------------------------------------------------------
+FROM base AS prod
+RUN uv sync --frozen --no-dev --no-install-project
+COPY backend/ ./
+COPY --from=frontend /app/frontend/dist /app/frontend/dist
+COPY infra/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && SECRET_KEY=build-only DJANGO_SETTINGS_MODULE=config.settings.prod \
+       FRONTEND_DIST=/app/frontend/dist python manage.py collectstatic --noinput
+ENV DJANGO_SETTINGS_MODULE=config.settings.prod \
+    FRONTEND_DIST=/app/frontend/dist
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD curl -fsS http://localhost:8000/healthz/ || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["web"]

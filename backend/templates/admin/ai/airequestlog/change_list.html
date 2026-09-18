@@ -1,0 +1,9 @@
+{% extends "admin/change_list.html" %}
+{% block object-tools %}
+  <div style="margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--hairline-color, #ddd); border-radius: 6px; display: inline-block;">
+    <strong>Custo estimado (filtro atual):</strong>
+    US$ {{ total_cost_usd|floatformat:4 }}
+    <span style="opacity: .7"> · {{ cl.result_count }} chamada{{ cl.result_count|pluralize }}</span>
+  </div>
+  {{ block.super }}
+{% endblock %}

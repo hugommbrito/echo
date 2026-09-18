@@ -1,0 +1,233 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+ * Echo design tokens
+ * Warm neutral surfaces, big numbers, discreet grid. The same token names are
+ * redefined for dark mode (system preference or an explicit `.dark` class).
+ * ------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --bg: #f7f4ef;
+  --surface: #fffdfa;
+  --surface-muted: #f1ede6;
+  --border: #e6e0d6;
+  --fg: #1f1b17;
+  --fg-muted: #75695e;
+  --primary: #1f1b17;
+  --primary-fg: #fbf9f5;
+  --danger: #c2410c;
+  --success: #15803d;
+  --warning: #b45309;
+  --ring: #7c3aed;
+
+  /* evaluation axes — categorical slots 1–3, validated (docs/dataviz-palette.md) */
+  --axis-structure: #2a78d6;
+  --axis-grammar: #eb6834;
+  --axis-fluency: #1baf7a;
+
+  /* card maturity — one-hue ordinal ramp (violet), new → mature */
+  --maturity-new: #a49ce8;
+  --maturity-learning: #7466d2;
+  --maturity-mature: #4a3aa7;
+
+  /* level / probe accent */
+  --level-accent: #4a3aa7;
+
+  /* status (reserved meaning, always with icon + label) */
+  --status-good: #006300;
+  --status-critical: #d03b3b;
+
+  /* chart chrome */
+  --chart-ink: #0b0b0b;
+  --chart-ink-secondary: #52514e;
+  --chart-ink-muted: #898781;
+  --chart-grid: #e6e0d6;
+  --chart-axis: #c9c2b8;
+  --chart-band: #f3efe8;
+  --chart-band-alt: #fffdfa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    color-scheme: dark;
+    --bg: #17140f;
+    --surface: #1f1b16;
+    --surface-muted: #27221c;
+    --border: #35302a;
+    --fg: #f3eee6;
+    --fg-muted: #a69a8c;
+    --primary: #f3eee6;
+    --primary-fg: #1a1613;
+    --danger: #fb923c;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --ring: #a78bfa;
+
+    --axis-structure: #3987e5;
+    --axis-grammar: #d95926;
+    --axis-fluency: #199e70;
+
+    --maturity-new: #5a4db5;
+    --maturity-learning: #8479df;
+    --maturity-mature: #b3aaf3;
+
+    --level-accent: #b3aaf3;
+
+    --status-good: #0ca30c;
+    --status-critical: #e66767;
+
+    --chart-ink: #ffffff;
+    --chart-ink-secondary: #c3c2b7;
+    --chart-ink-muted: #898781;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #383835;
+    --chart-band: #27221c;
+    --chart-band-alt: #1f1b16;
+  }
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #17140f;
+  --surface: #1f1b16;
+  --surface-muted: #27221c;
+  --border: #35302a;
+  --fg: #f3eee6;
+  --fg-muted: #a69a8c;
+  --primary: #f3eee6;
+  --primary-fg: #1a1613;
+  --danger: #fb923c;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --ring: #a78bfa;
+
+  --axis-structure: #3987e5;
+  --axis-grammar: #d95926;
+  --axis-fluency: #199e70;
+
+  --maturity-new: #5a4db5;
+  --maturity-learning: #8479df;
+  --maturity-mature: #b3aaf3;
+
+  --level-accent: #b3aaf3;
+
+  --status-good: #0ca30c;
+  --status-critical: #e66767;
+
+  --chart-ink: #ffffff;
+  --chart-ink-secondary: #c3c2b7;
+  --chart-ink-muted: #898781;
+  --chart-grid: #2c2c2a;
+  --chart-axis: #383835;
+  --chart-band: #27221c;
+  --chart-band-alt: #1f1b16;
+}
+
+/* Expose the tokens to Tailwind utilities: bg-surface, text-fg-muted,
+ * text-axis-structure, border-border, ring-ring, ... */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+
+  --color-axis-structure: var(--axis-structure);
+  --color-axis-grammar: var(--axis-grammar);
+  --color-axis-fluency: var(--axis-fluency);
+
+  --color-maturity-new: var(--maturity-new);
+  --color-maturity-learning: var(--maturity-learning);
+  --color-maturity-mature: var(--maturity-mature);
+
+  --color-level-accent: var(--level-accent);
+  --color-status-good: var(--status-good);
+  --color-status-critical: var(--status-critical);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'tnum' 1;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* discreet grid on the page background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--border) 45%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--border) 45%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse at top, black 0%, transparent 70%);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  dialog::backdrop {
+    background: color-mix(in srgb, var(--fg) 45%, transparent);
+    backdrop-filter: blur(2px);
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* big numbers */
+@utility text-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: normal; /* proportional figures for big standalone numbers */
+}

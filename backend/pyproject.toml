@@ -1,0 +1,56 @@
+[project]
+name = "echo-backend"
+version = "0.1.0"
+description = "Echo — English speaking practice with spaced repetition and adaptive level"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "django>=5.2,<5.3",
+    "djangorestframework>=3.16,<3.17",
+    "drf-spectacular>=0.28",
+    "psycopg[binary,pool]>=3.2",
+    "celery[redis]>=5.4",
+    "redis>=5.0",
+    "django-storages[s3]>=1.14",
+    "boto3>=1.35",
+    "anthropic>=1.0",
+    "openai>=1.60",
+    "pydantic>=2.9",
+    "whitenoise>=6.8",
+    "gunicorn>=23.0",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "pytest-cov>=6.0",
+    "time-machine>=2.16",
+    "django-stubs>=5.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["**/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ", "SIM"]
+ignore = ["B904", "SIM108", "DJ001", "DJ012"]  # nullable text = "not generated yet"; DJ012 misreads custom managers
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q --reuse-db"
+filterwarnings = ["ignore::DeprecationWarning"]

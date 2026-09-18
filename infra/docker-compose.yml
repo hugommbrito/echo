@@ -1,0 +1,88 @@
+# Local development: `docker compose -f infra/docker-compose.yml up`
+# Postgres + Redis + Django (runserver) + Celery worker + Vite dev server.
+name: echo
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: echo
+      POSTGRES_PASSWORD: echo
+      POSTGRES_DB: echo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U echo -d echo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+      target: dev
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    environment: &backend_env
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DATABASE_URL: postgres://echo:echo@postgres:5432/echo
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ECHO_AI_PROVIDER: ${ECHO_AI_PROVIDER:-fake}
+      SECRET_KEY: dev-insecure-secret-key
+    volumes:
+      - ../backend:/app/backend
+      - media:/app/backend/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+      target: dev
+    command: ["celery", "-A", "config", "worker", "-l", "info", "--concurrency", "2"]
+    environment: *backend_env
+    volumes:
+      - ../backend:/app/backend
+      - media:/app/backend/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_PROXY: http://backend:8000
+    volumes:
+      - ../frontend:/app
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  media:
