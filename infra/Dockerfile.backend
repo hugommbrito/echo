@@ -40,12 +40,14 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY backend/ ./
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 COPY infra/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh \
+COPY infra/healthcheck.sh /healthcheck.sh
+RUN chmod +x /entrypoint.sh /healthcheck.sh \
     && SECRET_KEY=build-only DJANGO_SETTINGS_MODULE=config.settings.prod \
        FRONTEND_DIST=/app/frontend/dist python manage.py collectstatic --noinput
 ENV DJANGO_SETTINGS_MODULE=config.settings.prod \
     FRONTEND_DIST=/app/frontend/dist
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD curl -fsS http://localhost:8000/healthz/ || exit 1
+# Role-aware check (web: /healthz/, worker: celery ping). Coolify reuses this HEALTHCHECK.
+HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 CMD /healthcheck.sh
+# No CMD: the role is the first argument or ECHO_PROCESS (web | worker | beat), default web.
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["web"]
