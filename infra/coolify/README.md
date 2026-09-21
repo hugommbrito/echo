@@ -348,6 +348,7 @@ mensal). O Always Free inclui 5 backups de volume no total; a política Silver r
 | 403 CSRF ao logar | `CSRF_TRUSTED_ORIGINS` sem `https://` ou domínio diferente | corrija a variável e Redeploy |
 | Worker: `Cannot connect to redis://...` | `REDIS_URL` sem a senha (`redis://:<senha>@...`) ou host errado | copie a URL interna de novo |
 | `NoSuchBucket` / `SignatureDoesNotMatch` no S3 | compartimento designado (§5.4), região errada no endpoint, secret colado errado | revise §5 |
+| Enviar áudio dá 500; log do `echo-web` traz `NotImplemented ... AWS chunked encoding not supported` | botocore ≥ 1.36 manda o `PutObject` como `Content-Encoding: aws-chunked`, que o Oracle não implementa | corrigido no código (`S3_CLIENT_CONFIG` em `base.py`): faça Redeploy. Sem redeploy, contorne com `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` + `AWS_RESPONSE_CHECKSUM_VALIDATION=when_required` nas variáveis do `echo-web` e do `echo-worker` |
 | 80/443 dão timeout mas 22 funciona | iptables do Ubuntu | §1.3 |
 | Let's Encrypt falha | DNS não propagado / 80 fechada | §6 |
 | "Out of capacity" ao criar a VM | falta de A1 no AD | outro AD, repetir, PAYG |

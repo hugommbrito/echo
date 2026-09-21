@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from botocore.config import Config as BotoConfig
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
@@ -131,6 +132,21 @@ WHITENOISE_INDEX_FILE = True
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 AUDIO_STORAGE_BACKEND = env("ECHO_AUDIO_STORAGE", "filesystem")  # filesystem | s3
+
+# botocore >= 1.36 adds a CRC32 checksum to every upload on its own and, to do so, streams the
+# body as `Content-Encoding: aws-chunked`. Oracle Object Storage rejects that with
+# `NotImplemented: AWS chunked encoding not supported`, so every PutObject fails. `when_required`
+# keeps checksums only where the API mandates them and sends a plain Content-Length body.
+# This config replaces the one django-storages would build, so it also carries the addressing
+# style and the signature version (the `addressing_style`/`signature_version` options are only
+# read when `client_config` is unset).
+S3_CLIENT_CONFIG = BotoConfig(
+    s3={"addressing_style": "path"},
+    signature_version="s3v4",
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
+)
+
 if AUDIO_STORAGE_BACKEND == "s3":
     STORAGES = {
         "default": {
@@ -145,8 +161,7 @@ if AUDIO_STORAGE_BACKEND == "s3":
                 "querystring_auth": True,
                 "querystring_expire": env_int("S3_SIGNED_URL_SECONDS", 900),
                 "file_overwrite": False,
-                "addressing_style": "path",
-                "signature_version": "s3v4",
+                "client_config": S3_CLIENT_CONFIG,
             },
         },
         "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
