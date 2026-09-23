@@ -2,7 +2,7 @@
 
 > Versão 2 (2026-09-16), após as 24 decisões tomadas no chat. As decisões estão consolidadas na seção 12; os parâmetros ajustáveis estão na seção 12.2 (e em `backend/config/settings/base.py`, prefixo `ECHO_*`).
 >
-> **Status da implementação (2026-09-16):** fases 0–6 implementadas neste repositório (backend Django com 161 testes em SQLite e PostgreSQL, frontend React com dashboard validado pelo skill `dataviz`, imagem Docker multi-arch, CI). Da fase 7 falta apenas o deploy real no Oracle Cloud + Coolify (guia em `infra/coolify/README.md`). Paleta dos gráficos em `docs/dataviz-palette.md`. Fase 8 (RLS, grupos, exportar/apagar dados) segue no backlog.
+> **Status da implementação (2026-09-23):** fases 0–7 concluídas e **multi-idioma (inglês + francês) implementado na §15**. Backend Django com 161 testes em SQLite e PostgreSQL, frontend React com dashboard validado pelo skill `dataviz`, imagem Docker multi-arch, CI. Deploy real no Oracle Cloud + Coolify no ar desde 2026-09-21 (guia em `infra/coolify/README.md`); em 2026-09-21 o smoke test de ponta a ponta rodou em produção com chaves reais (gravação → Whisper → Claude → Object Storage), com custo por chamada visível em `/admin/ai/airequestlog/`. Paleta dos gráficos em `docs/dataviz-palette.md`. Próximo: operação inicial (backups da §8 do guia, A/B de transcrição, conjunto de calibração — §14.4) e fase 8 (RLS, grupos, exportar/apagar dados) no backlog.
 
 ## 1. Contexto
 
@@ -54,6 +54,8 @@
 Convenções: UUID como PK; `created_at`/`updated_at` via `TimeStampedModel`; datas de agendamento em `DateField` na timezone da usuária; `JSONField` só para dados sem filtro relacional.
 
 ### 3.1 App `accounts`
+
+> Multi-idioma (§15): `level_rating`, `level_rating_initial`, `counted_attempts` e `default_new_cards_per_day` saíram de `User` para `LanguageProfile` (um por usuário × idioma).
 
 **User** (custom, login por e-mail)
 | Campo | Tipo | Notas |
@@ -137,6 +139,8 @@ Constraints: `UniqueConstraint(slug) WHERE owner IS NULL` e `UniqueConstraint(ow
 `leveling/elo.py`: funções puras (`expected_score`, `actual_from_composite`, `k_for`, `apply_result`, `band_for_rating`, `rating_for_level`), testadas por tabela.
 
 ### 3.5 App `practice`
+
+> Multi-idioma (§15): `new_cards_target` e `rating_at_start` saíram de `DailySession` para `SessionLanguagePlan` (um por idioma ativo); `Card`, `LevelLog` e `AIRequestLog` ganharam `language`.
 
 **DailySession** (herda `OwnedModel`): `session_date` (`UNIQUE(user, session_date)`), `new_cards_target`, `categories` M2M, `status Enum(generating, ready, in_progress, completed, failed)`, `generation_error`, `rating_at_start` (snapshot do rating usado na geração), `completed_at`.
 
@@ -444,6 +448,8 @@ Thinking adaptativo (default), `cache_control` no system prompt (verificar `cach
 ---
 
 ## 9. Prompts (texto exato, v1)
+
+> Em produção estão os **v2** (`*_v2.md`), que são estes textos com placeholders preenchidos por idioma a partir do `LanguageSpec` (§15.4). Os v1 ficam no repositório porque avaliações antigas referenciam `prompt_version="v1"`.
 
 Prompts em inglês; feedback no idioma `{feedback_language}` (default "Brazilian Portuguese"). Placeholders `{}` preenchidos pelo backend.
 
@@ -803,3 +809,48 @@ Estimativa grosseira: fases 0–7 em 5–7 semanas de trabalho de uma pessoa em 
 - 5 min em Opus ≈ 4 MB (limite Whisper 25 MB); transcrição de 5 min ≈ 10–15 s.
 - Rate limits irrelevantes neste volume; retries com backoff mesmo assim.
 - `AIRequestLog` permite tile de custo mensal no admin.
+
+
+---
+
+## 15. Adendo (2026-09-23): prática em mais de um idioma (inglês + francês do Québec)
+
+Implementado depois da fase 7. Plano detalhado em `~/.claude/plans/vamos-deixar-as-otimiza-es-serialized-balloon.md`; aqui fica o que não se deduz do código.
+
+### 15.1 Decisões de produto (2026-09-22)
+| Tema | Decisão |
+|---|---|
+| Sessão do dia | **Uma sessão mistura os idiomas.** Ao criar, a aprendiz escolhe categorias (compartilhadas) e quantos cards novos **por idioma**. |
+| Ordem da fila | Natural (novos por posição, depois vencidos por data), sem agrupar; a tela da sessão tem filtro de idioma (`?language=` na fila). |
+| Nível | Rating ELO **independente por idioma** (rating, inicial, tentativas contadas). Bandas, K e sondas iguais para todos. |
+| Categorias | Compartilhadas; descrições/hints seguem em inglês no prompt e o gerador escreve no idioma alvo. |
+| Francês | Variante **canadense/Québec** (situações de imigração, trabalho e cotidiano; registro tu/vous; avaliador tolerante à França; papel "FLE teacher"). |
+| Feedback | Uma configuração por usuário (`feedback_language`); o francês vem em pt-BR. |
+| Ativação | **Aprendiz em Configurações › Idiomas**: autoposicionamento A1/A2/B1 (rating 900/1100/1300; padrão A1), pausar/retomar, "perguntas novas por dia" por idioma. Sem apagar. Admin também edita no `/admin`. |
+| Estatísticas | Seletor de idioma com "todos": atividade/previsão/coleção somam; o gráfico de nível mostra uma linha por idioma; o tile Nível mostra os dois. |
+| Dados existentes | Migração criou o perfil `en` a partir dos campos do usuário e marcou cards/logs como `en`. |
+
+### 15.2 Registro de idiomas
+`backend/apps/core/languages.py`: `LanguageCode` (`en`, `fr`) + `LanguageSpec` (nomes, código do Whisper, papel do professor, `target_language_label`, `learner_context`, `variety_notes`, `evaluator_notes`, `level_examples` por CEFR, `filler_examples`, `typical_errors`, `speaking_rate_notes`, `whisper_prompt`). Terceiro idioma = um `LanguageSpec` novo + fixtures em `apps/ai/clients/fake.py` + entrada em `frontend/src/lib/languages.ts` (rótulos, tag, `lang`, cor). Frontend: `LANGUAGE_ORDER` define a ordem de badges, steppers e séries.
+
+### 15.3 Modelos
+- `accounts.LanguageProfile(OwnedModel)`: `language`, `level_rating`, `level_rating_initial`, `counted_attempts`, `is_active`, `default_new_cards_per_day`, `activated_at`; `UNIQUE(user, language)`. Único escritor do rating: `leveling.services.apply_level_result` (trava o perfil do idioma do card).
+- `Card.language` (fonte da verdade para transcrição, prompts, rating, filtros e stats); `LevelLog.language`, `AIRequestLog.language` (custo por idioma no admin).
+- `practice.SessionLanguagePlan(OwnedModel)`: `session`, `language`, `new_cards_target`, `rating_at_start`, `generation_status` (`pending/ready/failed`), `generation_error`, `generated_count`; `UNIQUE(user, session, language)`. `run_generation` percorre os planos pendentes (uma chamada ao Sonnet por idioma); falha é por plano e `retry-generation` regenera só os que falharam. Posições dos cards novos = `Max(position)+1` (várias passadas).
+- Fila/progresso filtram por idiomas **ativos agora**: pausar um idioma o tira da fila na hora; ao retomar no mesmo dia a fila volta a servir os cards, mas a sessão pode já estar `completed` (aceito, sem reabrir).
+- Migrações: `accounts 0002–0004`, `cards 0004`, `leveling 0002`, `ai 0002`, `practice 0002–0004` (schema e dados separados; RunPython com reverso; testadas em `tests/accounts/test_migrations.py`).
+
+### 15.4 Prompts v2 e transcrição
+`generation_v2.md`, `evaluation_v2.md`, `improved_answer_v2.md` = v1 com `{target_language}`, `{teacher_role}`, `{learner_context}`, `{variety_notes}`, `{evaluator_notes}`, `{level_examples}`, `{filler_examples}`, `{typical_errors}`, `{speaking_rate_notes}` (o bloco por idioma fica dentro do system prompt, cacheável). `ECHO_PROMPT_VERSION="v2"`. Whisper recebe `language=<whisper_code>` e o `whisper_prompt` do idioma (o arquivo `whisper_prompt.txt` foi absorvido pelo registro). `GrammarIssueType` += `agreement`, `verb_form`, `negation`, `register`.
+
+### 15.5 API
+- `GET /me/`: `languages[]` (perfis, pausados com `is_active=false`) substitui `level`/`default_new_cards_per_day`. `GET /languages/` (catálogo), `POST /me/languages/` `{language, starting_level?}`, `GET|PATCH /me/languages/{code}/` `{is_active?, default_new_cards_per_day?}`.
+- `POST /sessions/` `{category_ids, new_cards_targets: {"en": 3, "fr": 2}}` (só idiomas ativos); resposta com `plans[]` (cada um com `progress`) e `new_cards_target` total. `GET /sessions/projection/?targets=en:3,fr:2` → `languages[]` + somas (`available_carry_over` = novos esperando naquele idioma). `GET /sessions/{id}/queue/?language=`.
+- `language` em `Card`/`Attempt` e filtro `GET /cards/?language=`. Todos os `/stats/*` aceitam `language`; `overview.levels[]`, `level.series[]`, `collection.by_level[{language, levels[]}]` + `by_language[]`.
+- Rotas: 36. `create_user --language CODE[:RATING]` repetível (`--rating` = alias de `en:N`).
+
+### 15.6 Frontend
+`me.languages` no cabeçalho (um pill por idioma ativo, link para `/stats?language=`); Hoje com um stepper por idioma e projeção por idioma; Sessão com chips Todos/Inglês/Francês, "Responda em francês" no gravador e conclusão por idioma; Cards com filtro e tag; Estatísticas com seletor de idioma, `LevelTrend` multi-série e coleção agrupada; Configurações › Idiomas (ativar com A1/A2/B1, pausar, meta diária). Todo conteúdo da aprendiz/IA usa `lang` do card (`en-CA`/`fr-CA`). Cores dos idiomas em `docs/dataviz-palette.md`.
+
+### 15.7 Fora do escopo
+Interface em outro idioma; nomes de categorias traduzidos; feedback por idioma praticado; reabrir a sessão ao retomar um idioma pausado no mesmo dia; Glicko; otimizações operacionais (A/B de transcrição, calibração, backups).

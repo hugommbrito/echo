@@ -1,8 +1,21 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { StatsPage } from './StatsPage'
+
+const level = (language: string, rating: number, band: string, initial: number, next: unknown) => ({
+  language,
+  rating,
+  band,
+  delta_period: rating - initial,
+  provisional: true,
+  counted_attempts: 9,
+  initial_rating: initial,
+  is_active: true,
+  next_band: next,
+})
 
 const overview = {
   period: { from: '2026-08-18', to: '2026-09-16', days: 30 },
@@ -26,15 +39,37 @@ const overview = {
       attempts: 4,
     },
   },
-  level: {
-    rating: 1240,
-    band: 'B1',
-    delta_period: 35,
-    provisional: true,
-    counted_attempts: 9,
-    initial_rating: 1150,
-    next_band: { label: 'B2', points_needed: 160 },
-  },
+  levels: [
+    level('en', 1240, 'B1', 1150, { label: 'B2', points_needed: 160 }),
+    level('fr', 980, 'A1', 900, { label: 'A2', points_needed: 20 }),
+  ],
+}
+
+const me = {
+  id: 'u1',
+  email: 'ana@example.com',
+  full_name: 'Ana',
+  timezone: 'America/Sao_Paulo',
+  feedback_language: 'pt-BR',
+  is_staff: false,
+  languages: [
+    {
+      code: 'en',
+      name: 'Inglês',
+      is_active: true,
+      default_new_cards_per_day: 3,
+      activated_at: '2026-09-01T12:00:00Z',
+      level: { rating: 1240, band: 'B1', provisional: true, counted_attempts: 9, initial_rating: 1150 },
+    },
+    {
+      code: 'fr',
+      name: 'Francês (Canadá/Québec)',
+      is_active: true,
+      default_new_cards_per_day: 2,
+      activated_at: '2026-09-20T12:00:00Z',
+      level: { rating: 980, band: 'A1', provisional: true, counted_attempts: 1, initial_rating: 900 },
+    },
+  ],
 }
 
 const responses: Record<string, unknown> = {
@@ -57,23 +92,50 @@ const responses: Record<string, unknown> = {
       attempts: 3,
     },
   ],
+  '/me/': me,
+  '/languages/': [
+    { code: 'en', name: 'Inglês', name_en: 'English', starting_levels: ['A1', 'A2', 'B1'] },
+    { code: 'fr', name: 'Francês (Canadá/Québec)', name_en: 'French', starting_levels: ['A1', 'A2', 'B1'] },
+  ],
   '/stats/level/': {
     period: overview.period,
-    points: [
-      { date: '2026-08-18', rating_after: 1150 },
-      { date: '2026-09-16', rating_after: 1240 },
-    ],
     bands: [
+      { label: 'A1', min: 0, max: 999, center: 900 },
       { label: 'A2', min: 1000, max: 1199, center: 1100 },
       { label: 'B1', min: 1200, max: 1399, center: 1300 },
     ],
-    probes: {
-      above: { answered: 3, hits: 2, avg_actual: 0.7, avg_delta: 12 },
-      below: { answered: 1, hits: 1, avg_actual: 0.9, avg_delta: 3 },
-    },
-    events: [{ date: '2026-09-16', delta: 20, rating_after: 1240, probe: 'above', hit: true }],
-    current: { rating: 1240, band: 'B1' },
-    initial_rating: 1150,
+    series: [
+      {
+        language: 'en',
+        points: [
+          { date: '2026-08-18', rating_after: 1150 },
+          { date: '2026-09-16', rating_after: 1240 },
+        ],
+        probes: {
+          above: { answered: 3, hits: 2, avg_actual: 0.7, avg_delta: 12 },
+          below: { answered: 1, hits: 1, avg_actual: 0.9, avg_delta: 3 },
+        },
+        events: [{ date: '2026-09-16', delta: 20, rating_after: 1240, probe: 'above', hit: true }],
+        current: { rating: 1240, band: 'B1' },
+        initial_rating: 1150,
+        is_active: true,
+      },
+      {
+        language: 'fr',
+        points: [
+          { date: '2026-08-18', rating_after: 900 },
+          { date: '2026-09-15', rating_after: 980 },
+        ],
+        probes: {
+          above: { answered: 0, hits: 0, avg_actual: null, avg_delta: null },
+          below: { answered: 0, hits: 0, avg_actual: null, avg_delta: null },
+        },
+        events: [],
+        current: { rating: 980, band: 'A1' },
+        initial_rating: 900,
+        is_active: true,
+      },
+    ],
   },
   '/stats/activity/': [
     { bucket_start: '2026-09-16', new: 2, learning: 1, mature: 0, total: 3, speaking_seconds: 180 },
@@ -92,8 +154,24 @@ const responses: Record<string, unknown> = {
       { category: { id: 'c1', slug: 'travel', name: 'Travel' }, new: 1, learning: 2, mature: 1, total: 4 },
     ],
     by_level: [
-      { level: 'A2', count: 5 },
-      { level: 'B1', count: 7 },
+      {
+        language: 'en',
+        levels: [
+          { level: 'A2', count: 5 },
+          { level: 'B1', count: 7 },
+        ],
+      },
+      {
+        language: 'fr',
+        levels: [
+          { level: 'A2', count: 1 },
+          { level: 'B1', count: 0 },
+        ],
+      },
+    ],
+    by_language: [
+      { language: 'en', total: 12, new: 4, learning: 6, mature: 2, suspended: 1 },
+      { language: 'fr', total: 1, new: 0, learning: 1, mature: 0, suspended: 0 },
     ],
   },
   '/stats/grammar-issues/': {
@@ -129,12 +207,27 @@ const responses: Record<string, unknown> = {
   '/categories/': [{ id: 'c1', slug: 'travel', name: 'Travel', scope: 'global' }],
 }
 
+const calls: string[] = []
+
+function renderPage(initialPath = '/stats') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <StatsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 describe('StatsPage', () => {
   beforeEach(() => {
+    calls.length = 0
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = new URL(String(input), 'http://localhost')
+        calls.push(url.pathname + url.search)
         const key = url.pathname.replace('/api/v1', '')
         const body = responses[key]
         if (body === undefined)
@@ -149,19 +242,43 @@ describe('StatsPage', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('renders tiles, charts and footers from the stats API', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={client}>
-        <StatsPage />
-      </QueryClientProvider>,
-    )
+    renderPage()
     await waitFor(() => expect(screen.getByText('Evolução do nível')).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText(/160 pts p\/ B2/)).toBeInTheDocument())
+    expect(screen.getByText(/20 pts p\/ A2/)).toBeInTheDocument() // second language in the Nível tile
     expect(screen.getByText('Evolução das notas')).toBeInTheDocument()
     expect(screen.getByText('Próximas revisões')).toBeInTheDocument()
     expect(screen.getByText('Erros de gramática mais frequentes')).toBeInTheDocument()
-    expect(screen.getByText(/sondas acima:/)).toBeInTheDocument()
+    expect(screen.getAllByText(/sondas acima:/).length).toBe(2) // one footer row per language
     expect(screen.getAllByText('Ver tabela').length).toBeGreaterThanOrEqual(5)
     expect(screen.getByRole('radio', { name: /30 dias/ })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('offers a language selector when more than one language is active', async () => {
+    renderPage()
+    const group = await screen.findByRole('radiogroup', { name: 'Idioma' })
+    expect(group).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Todos/ })).toHaveAttribute('aria-checked', 'true')
+    // both languages appear in the level chart legend
+    await waitFor(() => expect(screen.getAllByText('Inglês').length).toBeGreaterThan(0))
+    expect(screen.getAllByText('Francês').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Francês/ }))
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes('/stats/overview/') && c.includes('language=fr'))).toBe(true),
+    )
+    expect(calls.some((c) => c.includes('/stats/level/') && c.includes('language=fr'))).toBe(true)
+    expect(calls.some((c) => c.includes('/stats/collection/') && c.includes('language=fr'))).toBe(true)
+  })
+
+  it('reads the language from the URL (deep link from the header badge)', async () => {
+    renderPage('/stats?language=fr')
+    await screen.findByRole('radiogroup', { name: 'Idioma' })
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /Francês/ })).toHaveAttribute('aria-checked', 'true'),
+    )
+    await waitFor(() =>
+      expect(calls.some((c) => c.includes('/stats/scores/') && c.includes('language=fr'))).toBe(true),
+    )
   })
 })

@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AXES } from '@/lib/colors'
 import { formatDateShort, formatDecimal, formatDuration } from '@/lib/format'
 import { ATTEMPT_STATUS_LABELS } from '@/lib/labels'
+import { languageMeta } from '@/lib/languages'
 import type { Attempt } from '@/types/api'
 
 export interface AttemptHistoryProps {
@@ -99,7 +100,10 @@ function AttemptRow({ attempt }: { attempt: Attempt }) {
             label={`Gravação de ${formatDateShort(attempt.attempted_on)}`}
           />
           {attempt.transcript_text ? (
-            <p className="text-sm leading-relaxed text-fg-muted" lang="en">
+            <p
+              className="text-sm leading-relaxed text-fg-muted"
+              lang={languageMeta(attempt.language).htmlLang}
+            >
               {attempt.transcript_text}
             </p>
           ) : null}

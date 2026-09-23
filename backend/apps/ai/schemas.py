@@ -19,6 +19,10 @@ GrammarIssueType = Literal[
     "word_choice",
     "missing_word",
     "extra_word",
+    "agreement",
+    "verb_form",
+    "negation",
+    "register",
     "other",
 ]
 GRAMMAR_ISSUE_TYPES: tuple[str, ...] = GrammarIssueType.__args__  # type: ignore[attr-defined]

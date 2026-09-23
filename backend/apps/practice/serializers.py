@@ -1,29 +1,45 @@
 from __future__ import annotations
 
 from django.conf import settings
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.cards.serializers import CardSerializer, CategoryBriefSerializer
+from apps.core.languages import LanguageCode
+from apps.leveling.elo import band_for_rating
 from apps.leveling.serializers import LevelLogSerializer
 from apps.practice import queue
-from apps.practice.models import Attempt, DailySession, Evaluation
+from apps.practice.models import Attempt, DailySession, Evaluation, SessionLanguagePlan
 from apps.scheduling.serializers import ReviewLogSerializer
 
 
 class SessionCreateSerializer(serializers.Serializer):
     category_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=True)
-    new_cards_target = serializers.IntegerField(
-        min_value=0, max_value=settings.ECHO_MAX_NEW_CARDS_PER_DAY
+    new_cards_targets = serializers.DictField(
+        child=serializers.IntegerField(min_value=0, max_value=settings.ECHO_MAX_NEW_CARDS_PER_DAY),
+        help_text='New cards per active language, e.g. {"en": 3, "fr": 2}',
     )
 
 
+class LanguageProjectionSerializer(serializers.Serializer):
+    language = serializers.ChoiceField(choices=LanguageCode.choices)
+    base_level = serializers.CharField()
+    carried_over = serializers.IntegerField()
+    available_carry_over = serializers.IntegerField()
+    to_generate = serializers.IntegerField()
+    probes = serializers.IntegerField()
+    due_today = serializers.IntegerField()
+    overdue = serializers.IntegerField()
+    total = serializers.IntegerField()
+
+
 class ProjectionSerializer(serializers.Serializer):
+    languages = LanguageProjectionSerializer(many=True)
     carried_over = serializers.IntegerField()
     to_generate = serializers.IntegerField()
     due_today = serializers.IntegerField()
     overdue = serializers.IntegerField()
     probes = serializers.IntegerField()
-    base_level = serializers.CharField()
     total = serializers.IntegerField()
 
 
@@ -35,8 +51,36 @@ class ProgressSerializer(serializers.Serializer):
     remaining = serializers.IntegerField()
 
 
+class SessionLanguagePlanSerializer(serializers.ModelSerializer):
+    base_level = serializers.SerializerMethodField()
+    progress = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SessionLanguagePlan
+        fields = [
+            "language",
+            "new_cards_target",
+            "rating_at_start",
+            "base_level",
+            "generation_status",
+            "generation_error",
+            "generated_count",
+            "progress",
+        ]
+        read_only_fields = fields
+
+    def get_base_level(self, plan: SessionLanguagePlan) -> str:
+        return band_for_rating(plan.rating_at_start)
+
+    @extend_schema_field(ProgressSerializer)
+    def get_progress(self, plan: SessionLanguagePlan) -> dict:
+        return ProgressSerializer(queue.progress(plan.session, plan.language)).data
+
+
 class DailySessionSerializer(serializers.ModelSerializer):
     categories = CategoryBriefSerializer(many=True, read_only=True)
+    new_cards_target = serializers.IntegerField(source="new_cards_target_total", read_only=True)
+    plans = SessionLanguagePlanSerializer(many=True, read_only=True)
     progress = serializers.SerializerMethodField()
     projected = serializers.SerializerMethodField()
 
@@ -49,17 +93,19 @@ class DailySessionSerializer(serializers.ModelSerializer):
             "categories",
             "status",
             "generation_error",
-            "rating_at_start",
             "completed_at",
             "created_at",
+            "plans",
             "progress",
             "projected",
         ]
         read_only_fields = fields
 
+    @extend_schema_field(ProgressSerializer)
     def get_progress(self, session: DailySession) -> dict:
         return ProgressSerializer(queue.progress(session)).data
 
+    @extend_schema_field(ProjectionSerializer(allow_null=True))
     def get_projected(self, session: DailySession) -> dict | None:
         projection = self.context.get("projection")
         return ProjectionSerializer(projection.as_dict()).data if projection is not None else None
@@ -120,6 +166,7 @@ class EvaluationSerializer(serializers.Serializer):
 
 class AttemptSerializer(serializers.ModelSerializer):
     card_id = serializers.UUIDField(read_only=True)
+    language = serializers.CharField(source="card.language", read_only=True)
     session_id = serializers.UUIDField(read_only=True, allow_null=True)
     audio_url = serializers.SerializerMethodField()
     evaluation = serializers.SerializerMethodField()
@@ -134,6 +181,7 @@ class AttemptSerializer(serializers.ModelSerializer):
             "failure_stage",
             "error_message",
             "card_id",
+            "language",
             "session_id",
             "attempt_number",
             "attempted_on",

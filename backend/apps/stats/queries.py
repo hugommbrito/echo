@@ -14,7 +14,9 @@ from statistics import mean
 
 from django.db.models import Count, Sum
 
+from apps.accounts import services as account_services
 from apps.cards.models import Card, CardStatus, Category
+from apps.core.languages import LanguageCode
 from apps.leveling.elo import band_for_rating, bands_for_api, is_provisional
 from apps.leveling.models import LevelLog
 from apps.practice.models import Attempt, AttemptStatus, DailySession, Evaluation
@@ -88,7 +90,7 @@ def bucket_start(day: dt.date, bucket: str) -> dt.date:
 # --- Building blocks ------------------------------------------------------------------------
 
 
-def scored_attempts(period: Period, category: Category | None):
+def scored_attempts(period: Period, category: Category | None, language: str | None = None):
     qs = Evaluation.objects.filter(
         attempt__status=AttemptStatus.COMPLETED,
         attempt__insufficient_speech=False,
@@ -97,12 +99,14 @@ def scored_attempts(period: Period, category: Category | None):
     ).select_related("attempt", "attempt__card")
     if category is not None:
         qs = qs.filter(attempt__card__category=category)
+    if language is not None:
+        qs = qs.filter(attempt__card__language=language)
     return qs
 
 
-def score_summary(period: Period, category: Category | None) -> dict:
+def score_summary(period: Period, category: Category | None, language: str | None = None) -> dict:
     rows = list(
-        scored_attempts(period, category).values_list(
+        scored_attempts(period, category, language).values_list(
             "structure_score", "grammar_score", "fluency_score", "composite_score"
         )
     )
@@ -115,42 +119,88 @@ def score_summary(period: Period, category: Category | None) -> dict:
     }
 
 
-def active_states(category: Category | None = None):
+def active_states(category: Category | None = None, language: str | None = None):
     qs = SchedulerState.objects.filter(card__status=CardStatus.ACTIVE)
     if category is not None:
         qs = qs.filter(card__category=category)
+    if language is not None:
+        qs = qs.filter(card__language=language)
     return qs
+
+
+def _active_cards(language: str | None = None):
+    qs = Card.objects.filter(status=CardStatus.ACTIVE)
+    return qs.filter(language=language) if language is not None else qs
+
+
+def _profiles(user, language: str | None):
+    """Active profiles, plus the requested one when a paused language is asked for explicitly."""
+    profiles = list(account_services.active_profiles(user))
+    if language is not None:
+        profiles = [p for p in profiles if p.language == language]
+        if not profiles:
+            profiles = list(account_services.all_profiles(user).filter(language=language))
+    return profiles
+
+
+def _level_block(user, profile, period: Period) -> dict:
+    level_logs = LevelLog.objects.filter(
+        language=profile.language, logged_on__gte=period.start, logged_on__lte=period.end
+    ).order_by("logged_on", "created_at")
+    first_log = level_logs.first()
+    next_band = next((b for b in bands_for_api() if b["min"] > profile.level_rating), None)
+    return {
+        "language": profile.language,
+        "rating": profile.level_rating,
+        "band": band_for_rating(profile.level_rating),
+        "delta_period": profile.level_rating - first_log.rating_before if first_log else 0,
+        "provisional": is_provisional(profile.counted_attempts),
+        "counted_attempts": profile.counted_attempts,
+        "initial_rating": profile.level_rating_initial,
+        "is_active": profile.is_active,
+        "next_band": {
+            "label": next_band["label"],
+            "points_needed": next_band["min"] - profile.level_rating,
+        }
+        if next_band
+        else None,
+    }
 
 
 # --- Endpoints ------------------------------------------------------------------------------
 
 
-def overview(user, period: Period, category: Category | None) -> dict:
+def overview(user, period: Period, category: Category | None, language: str | None = None) -> dict:
     today = user.local_today()
     reviews_today = ReviewLog.objects.filter(reviewed_on=today)
+    answered_today = Attempt.objects.filter(
+        attempted_on=today, status=AttemptStatus.COMPLETED, counts_for_scheduling=True
+    )
+    suspended = Card.objects.filter(status=CardStatus.SUSPENDED)
+    if language is not None:
+        reviews_today = reviews_today.filter(card__language=language)
+        answered_today = answered_today.filter(card__language=language)
+        suspended = suspended.filter(language=language)
     session_today = DailySession.objects.filter(session_date=today).first()
-    states = active_states()
+    states = active_states(language=language)
     due_qs = states.exclude(maturity=Maturity.NEW)
+    profiles = _profiles(user, language)
 
-    level_logs = LevelLog.objects.filter(
-        logged_on__gte=period.start, logged_on__lte=period.end
-    ).order_by("logged_on", "created_at")
-    first_log = level_logs.first()
-    delta_period = user.level_rating - first_log.rating_before if first_log else 0
-    band = band_for_rating(user.level_rating)
-    next_band = next((b for b in bands_for_api() if b["min"] > user.level_rating), None)
+    if session_today is not None:
+        plans = session_today.plans.all()
+        if language is not None:
+            plans = plans.filter(language=language)
+        target = sum(plan.new_cards_target for plan in plans)
+    else:
+        target = sum(p.default_new_cards_per_day for p in profiles if p.is_active)
 
     return {
         "period": period.as_dict(),
         "today": {
-            "answered": Attempt.objects.filter(
-                attempted_on=today, status=AttemptStatus.COMPLETED, counts_for_scheduling=True
-            ).count(),
+            "answered": answered_today.count(),
             "new_answered": reviews_today.filter(maturity_before=Maturity.NEW).count(),
             "due_answered": reviews_today.exclude(maturity_before=Maturity.NEW).count(),
-            "target": session_today.new_cards_target
-            if session_today
-            else user.default_new_cards_per_day,
+            "target": target,
             "session_id": str(session_today.id) if session_today else None,
             "session_status": session_today.status if session_today else None,
         },
@@ -166,32 +216,21 @@ def overview(user, period: Period, category: Category | None) -> dict:
             "new": states.filter(maturity=Maturity.NEW).count(),
             "learning": states.filter(maturity=Maturity.LEARNING).count(),
             "mature": states.filter(maturity=Maturity.MATURE).count(),
-            "suspended": Card.objects.filter(status=CardStatus.SUSPENDED).count(),
+            "suspended": suspended.count(),
         },
         "scores": {
-            "period": score_summary(period, category),
-            "previous_period": score_summary(period.previous(), category),
+            "period": score_summary(period, category, language),
+            "previous_period": score_summary(period.previous(), category, language),
         },
-        "level": {
-            "rating": user.level_rating,
-            "band": band,
-            "delta_period": delta_period,
-            "provisional": is_provisional(user.counted_attempts),
-            "counted_attempts": user.counted_attempts,
-            "initial_rating": user.level_rating_initial or user.level_rating,
-            "next_band": {
-                "label": next_band["label"],
-                "points_needed": next_band["min"] - user.level_rating,
-            }
-            if next_band
-            else None,
-        },
+        "levels": [_level_block(user, profile, period) for profile in profiles],
     }
 
 
-def scores(period: Period, category: Category | None, bucket: str) -> list[dict]:
+def scores(
+    period: Period, category: Category | None, bucket: str, language: str | None = None
+) -> list[dict]:
     grouped: dict[dt.date, list] = defaultdict(list)
-    for ev in scored_attempts(period, category):
+    for ev in scored_attempts(period, category, language):
         grouped[bucket_start(ev.attempt.attempted_on, bucket)].append(ev)
     return [
         {
@@ -206,9 +245,19 @@ def scores(period: Period, category: Category | None, bucket: str) -> list[dict]
     ]
 
 
-def level(user, period: Period) -> dict:
+def level(user, period: Period, language: str | None = None) -> dict:
+    return {
+        "period": period.as_dict(),
+        "bands": bands_for_api(),
+        "series": [_level_series(profile, period) for profile in _profiles(user, language)],
+    }
+
+
+def _level_series(profile, period: Period) -> dict:
     logs = list(
-        LevelLog.objects.filter(logged_on__gte=period.start, logged_on__lte=period.end)
+        LevelLog.objects.filter(
+            language=profile.language, logged_on__gte=period.start, logged_on__lte=period.end
+        )
         .select_related("card")
         .order_by("logged_on", "created_at")
     )
@@ -216,7 +265,7 @@ def level(user, period: Period) -> dict:
     for log in logs:
         last_per_day[log.logged_on] = log.rating_after
     points = [{"date": day, "rating_after": rating} for day, rating in sorted(last_per_day.items())]
-    start_rating = logs[0].rating_before if logs else user.level_rating
+    start_rating = logs[0].rating_before if logs else profile.level_rating
     if not points or points[0]["date"] != period.start:
         points.insert(0, {"date": period.start, "rating_after": start_rating})
 
@@ -232,9 +281,8 @@ def level(user, period: Period) -> dict:
         }
 
     return {
-        "period": period.as_dict(),
+        "language": profile.language,
         "points": points,
-        "bands": bands_for_api(),
         "probes": probes,
         "events": [
             {
@@ -247,12 +295,18 @@ def level(user, period: Period) -> dict:
             for log in logs
             if log.card.probe != "none"
         ],
-        "current": {"rating": user.level_rating, "band": band_for_rating(user.level_rating)},
-        "initial_rating": user.level_rating_initial or user.level_rating,
+        "current": {
+            "rating": profile.level_rating,
+            "band": band_for_rating(profile.level_rating),
+        },
+        "initial_rating": profile.level_rating_initial,
+        "is_active": profile.is_active,
     }
 
 
-def activity(period: Period, category: Category | None, bucket: str) -> list[dict]:
+def activity(
+    period: Period, category: Category | None, bucket: str, language: str | None = None
+) -> list[dict]:
     reviews = ReviewLog.objects.filter(reviewed_on__gte=period.start, reviewed_on__lte=period.end)
     attempts = Attempt.objects.filter(
         status=AttemptStatus.COMPLETED, attempted_on__gte=period.start, attempted_on__lte=period.end
@@ -260,6 +314,9 @@ def activity(period: Period, category: Category | None, bucket: str) -> list[dic
     if category is not None:
         reviews = reviews.filter(card__category=category)
         attempts = attempts.filter(card__category=category)
+    if language is not None:
+        reviews = reviews.filter(card__language=language)
+        attempts = attempts.filter(card__language=language)
     counts: dict[dt.date, Counter] = defaultdict(Counter)
     for reviewed_on, maturity_before in reviews.values_list("reviewed_on", "maturity_before"):
         counts[bucket_start(reviewed_on, bucket)][maturity_before] += 1
@@ -280,10 +337,10 @@ def activity(period: Period, category: Category | None, bucket: str) -> list[dic
     ]
 
 
-def forecast(user, days: int) -> dict:
+def forecast(user, days: int, language: str | None = None) -> dict:
     today = user.local_today()
     horizon = today + dt.timedelta(days=days)
-    due_qs = active_states().exclude(maturity=Maturity.NEW)
+    due_qs = active_states(language=language).exclude(maturity=Maturity.NEW)
     overdue = due_qs.filter(due_date__lt=today).count()
     per_day = Counter(
         due_qs.filter(due_date__gte=today, due_date__lt=horizon).values_list("due_date", flat=True)
@@ -295,13 +352,16 @@ def forecast(user, days: int) -> dict:
     return {"days": rows, "overdue": overdue, "total": overdue + sum(per_day.values())}
 
 
-def collection(user) -> dict:
-    states = active_states()
+def collection(user, language: str | None = None) -> dict:
+    states = active_states(language=language)
+    suspended = Card.objects.filter(status=CardStatus.SUSPENDED)
+    if language is not None:
+        suspended = suspended.filter(language=language)
     by_maturity = {
         "new": states.filter(maturity=Maturity.NEW).count(),
         "learning": states.filter(maturity=Maturity.LEARNING).count(),
         "mature": states.filter(maturity=Maturity.MATURE).count(),
-        "suspended": Card.objects.filter(status=CardStatus.SUSPENDED).count(),
+        "suspended": suspended.count(),
     }
     by_category_rows = (
         states.values(
@@ -328,24 +388,55 @@ def collection(user) -> dict:
         )
         entry[row["maturity"]] += row["count"]
         entry["total"] += row["count"]
-    by_level = Counter(
-        Card.objects.filter(status=CardStatus.ACTIVE).values_list("cefr_level", flat=True)
+    languages = (
+        [language]
+        if language is not None
+        else sorted(
+            {p.language for p in _profiles(user, None)}
+            | set(_active_cards().values_list("language", flat=True).distinct()),
+            key=list(LanguageCode.values).index,
+        )
     )
+    by_level_rows = Counter(_active_cards(language).values_list("language", "cefr_level"))
+    by_language = []
+    for code in languages:
+        lang_states = states.filter(card__language=code)
+        by_language.append(
+            {
+                "language": code,
+                "total": lang_states.count(),
+                "new": lang_states.filter(maturity=Maturity.NEW).count(),
+                "learning": lang_states.filter(maturity=Maturity.LEARNING).count(),
+                "mature": lang_states.filter(maturity=Maturity.MATURE).count(),
+                "suspended": Card.objects.filter(
+                    status=CardStatus.SUSPENDED, language=code
+                ).count(),
+            }
+        )
     return {
         "by_maturity": by_maturity,
         "by_category": sorted(per_category.values(), key=lambda e: -e["total"]),
         "by_level": [
-            {"level": lvl, "count": by_level.get(lvl, 0)}
-            for lvl in ["A1", "A2", "B1", "B2", "C1", "C2"]
+            {
+                "language": code,
+                "levels": [
+                    {"level": lvl, "count": by_level_rows.get((code, lvl), 0)}
+                    for lvl in ["A1", "A2", "B1", "B2", "C1", "C2"]
+                ],
+            }
+            for code in languages
         ],
+        "by_language": by_language,
     }
 
 
-def grammar_issues(period: Period, category: Category | None) -> dict:
+def grammar_issues(period: Period, category: Category | None, language: str | None = None) -> dict:
     def collect(p: Period) -> tuple[Counter, dict[str, list]]:
         counts: Counter = Counter()
         examples: dict[str, list] = defaultdict(list)
-        for issues in scored_attempts(p, category).values_list("grammar_issues", flat=True):
+        for issues in scored_attempts(p, category, language).values_list(
+            "grammar_issues", flat=True
+        ):
             for issue in issues or []:
                 kind = issue.get("type", "other")
                 counts[kind] += 1
@@ -375,11 +466,9 @@ def grammar_issues(period: Period, category: Category | None) -> dict:
     }
 
 
-def categories(user, period: Period) -> list[dict]:
-    cards_by_category = Counter(
-        Card.objects.filter(status=CardStatus.ACTIVE).values_list("category_id", flat=True)
-    )
-    evaluations = list(scored_attempts(period, None))
+def categories(user, period: Period, language: str | None = None) -> list[dict]:
+    cards_by_category = Counter(_active_cards(language).values_list("category_id", flat=True))
+    evaluations = list(scored_attempts(period, None, language))
     grouped: dict = defaultdict(list)
     for ev in evaluations:
         grouped[ev.attempt.card.category_id].append(ev)
@@ -413,10 +502,12 @@ def categories(user, period: Period) -> list[dict]:
     return rows
 
 
-def heatmap(user, year: int, category: Category | None) -> list[dict]:
+def heatmap(user, year: int, category: Category | None, language: str | None = None) -> list[dict]:
     qs = Attempt.objects.filter(status=AttemptStatus.COMPLETED, attempted_on__year=year)
     if category is not None:
         qs = qs.filter(card__category=category)
+    if language is not None:
+        qs = qs.filter(card__language=language)
     rows = (
         qs.values("attempted_on")
         .annotate(count=Count("id"), seconds=Sum("audio_duration_seconds"))
@@ -428,9 +519,9 @@ def heatmap(user, year: int, category: Category | None) -> list[dict]:
     ]
 
 
-def advanced(user) -> dict:
+def advanced(user, language: str | None = None) -> dict:
     """Ease and interval distributions + answer durations (the collapsed 'Avançado' block)."""
-    states = active_states().exclude(maturity=Maturity.NEW)
+    states = active_states(language=language).exclude(maturity=Maturity.NEW)
     ease_buckets = Counter()
     interval_buckets = Counter()
     for ease, interval in states.values_list("ease_factor", "interval_days"):
@@ -443,11 +534,12 @@ def advanced(user) -> dict:
             interval_buckets["31-90"] += 1
         else:
             interval_buckets["91-180"] += 1
-    durations = list(
-        Attempt.objects.filter(
-            status=AttemptStatus.COMPLETED, audio_duration_seconds__isnull=False
-        ).values_list("audio_duration_seconds", flat=True)
+    attempts = Attempt.objects.filter(
+        status=AttemptStatus.COMPLETED, audio_duration_seconds__isnull=False
     )
+    if language is not None:
+        attempts = attempts.filter(card__language=language)
+    durations = list(attempts.values_list("audio_duration_seconds", flat=True))
     return {
         "ease": [{"ease": k, "count": v} for k, v in sorted(ease_buckets.items())],
         "intervals": [

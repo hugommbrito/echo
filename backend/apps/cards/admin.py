@@ -20,12 +20,13 @@ class CategoryAdmin(admin.ModelAdmin):
 class CardAdmin(OwnedModelAdmin):
     list_display = [
         "question_text",
+        "language",
         "category",
         "cefr_level",
         "difficulty_rating",
         "probe",
         "status",
     ]
-    list_filter = ["status", "cefr_level", "probe"]
+    list_filter = ["language", "status", "cefr_level", "probe"]
     search_fields = ["question_text"]
     readonly_fields = ["question_text", "key_points", "generation_model", "prompt_version"]

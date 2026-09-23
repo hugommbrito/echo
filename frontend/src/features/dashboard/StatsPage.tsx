@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { useMe } from '@/api/auth'
+import { LanguageTag } from '@/components/ui/LanguageTag'
+import { isLanguageCode, sortByLanguage } from '@/lib/languages'
 import { ActivityChart } from './ActivityChart'
 import { AdvancedSection } from './AdvancedSection'
 import { CategoryTable } from './CategoryTable'
@@ -46,12 +50,29 @@ function todayIso(): string {
 export function StatsPage() {
   const [preset, setPreset] = useState<PeriodPreset>('30d')
   const [category, setCategory] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  const me = useMe()
+  const profiles = useMemo(() => sortByLanguage(me.data?.languages ?? [], (p) => p.code), [me.data])
+  const requested = params.get('language')
+  const language =
+    requested && isLanguageCode(requested) && profiles.some((p) => p.code === requested) ? requested : null
+  const setLanguage = (code: string | null) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (code) next.set('language', code)
+        else next.delete('language')
+        return next
+      },
+      { replace: true },
+    )
+  }
   const colors = useChartColors()
 
   const filters = useMemo<StatsFilters>(() => {
     const days = PRESETS.find((p) => p.key === preset)?.days ?? null
-    return { from: isoDaysAgo(days == null ? 3650 : days - 1), to: todayIso(), category }
-  }, [preset, category])
+    return { from: isoDaysAgo(days == null ? 3650 : days - 1), to: todayIso(), category, language }
+  }, [preset, category, language])
   const bucket: 'day' | 'week' = preset === '7d' || preset === '30d' ? 'day' : 'week'
   const year = Number(filters.to.slice(0, 4))
 
@@ -59,11 +80,11 @@ export function StatsPage() {
   const scores = useScores(filters, bucket)
   const level = useLevel(filters)
   const activity = useActivity(filters, bucket)
-  const forecast = useForecast(30)
-  const collection = useCollection()
+  const forecast = useForecast(30, language)
+  const collection = useCollection(language)
   const grammar = useGrammarIssues(filters)
   const categories = useCategoryStats(filters)
-  const heatmap = useHeatmap(year, category)
+  const heatmap = useHeatmap(year, category, language)
   const options = useCategoryOptions()
 
   const anyError = [overview, scores, level, activity, forecast, collection, grammar, categories].find(
@@ -102,6 +123,30 @@ export function StatsPage() {
             </button>
           ))}
         </div>
+        {profiles.length > 1 ? (
+          <div
+            className="flex flex-wrap rounded-lg border border-border bg-surface p-0.5 text-sm"
+            role="radiogroup"
+            aria-label="Idioma"
+          >
+            {[null, ...profiles.map((p) => p.code)].map((code) => {
+              const checked = language === code
+              return (
+                <button
+                  key={code ?? 'all'}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  onClick={() => setLanguage(code)}
+                  className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 ${checked ? 'bg-bg font-semibold text-fg' : 'text-fg-muted hover:text-fg'}`}
+                >
+                  {checked ? <Check className="size-4" strokeWidth={3} aria-hidden /> : null}
+                  {code ? <LanguageTag code={code} full bare /> : 'Todos'}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
         <label className="inline-flex items-center gap-2 text-sm text-fg-muted">
           <span>Categoria</span>
           <select
@@ -212,7 +257,7 @@ export function StatsPage() {
 
       <CategoryTable rows={categories.data ?? []} colors={colors} loading={categories.isFetching} />
 
-      <AdvancedSection colors={colors} />
+      <AdvancedSection colors={colors} language={language} />
     </div>
   )
 }

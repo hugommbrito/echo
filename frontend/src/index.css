@@ -35,6 +35,11 @@
   /* level / probe accent */
   --level-accent: #4a3aa7;
 
+  /* practised languages — categorical slots 4 (amber) and 5 (magenta), validated
+   * (docs/dataviz-palette.md → Idiomas); never on the same chart as the axis series */
+  --language-en: #eda100;
+  --language-fr: #e87ba4;
+
   /* status (reserved meaning, always with icon + label) */
   --status-good: #006300;
   --status-critical: #d03b3b;
@@ -75,6 +80,9 @@
 
     --level-accent: #b3aaf3;
 
+    --language-en: #c98500;
+    --language-fr: #d55181;
+
     --status-good: #0ca30c;
     --status-critical: #e66767;
 
@@ -113,6 +121,9 @@
 
   --level-accent: #b3aaf3;
 
+  --language-en: #c98500;
+  --language-fr: #d55181;
+
   --status-good: #0ca30c;
   --status-critical: #e66767;
 
@@ -150,6 +161,8 @@
   --color-maturity-mature: var(--maturity-mature);
 
   --color-level-accent: var(--level-accent);
+  --color-language-en: var(--language-en);
+  --color-language-fr: var(--language-fr);
   --color-status-good: var(--status-good);
   --color-status-critical: var(--status-critical);
 

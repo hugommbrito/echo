@@ -5,33 +5,33 @@ from decimal import Decimal
 
 from django.conf import settings
 
-from apps.accounts.models import User
+from apps.accounts.models import LanguageProfile
 from apps.leveling import elo
 from apps.leveling.models import LevelLog
 
 
-def apply_level_result(
-    *, user: User, card, attempt, composite: Decimal, logged_on: dt.date
-) -> LevelLog:
-    """Move the learner's rating for one counted attempt. Must run inside a transaction."""
-    locked = User.objects.select_for_update().get(pk=user.pk)
+def apply_level_result(*, user, card, attempt, composite: Decimal, logged_on: dt.date) -> LevelLog:
+    """Move the learner's rating *in the card's language* for one counted attempt.
+
+    Must run inside a transaction. Raises `LanguageProfile.DoesNotExist` when the profile was
+    removed (only possible through the admin); the pipeline turns that into a failed stage.
+    """
+    profile = LanguageProfile.all_users.select_for_update().get(user=user, language=card.language)
     result = elo.apply_result(
-        learner_rating=locked.level_rating,
+        learner_rating=profile.level_rating,
         question_rating=card.difficulty_rating,
         composite=composite,
-        counted_attempts=locked.counted_attempts,
+        counted_attempts=profile.counted_attempts,
     )
-    locked.level_rating = result.rating_after
-    locked.counted_attempts += 1
-    locked.save(update_fields=["level_rating", "counted_attempts"])
-    # keep the caller's instance in sync
-    user.level_rating = locked.level_rating
-    user.counted_attempts = locked.counted_attempts
+    profile.level_rating = result.rating_after
+    profile.counted_attempts += 1
+    profile.save(update_fields=["level_rating", "counted_attempts", "updated_at"])
 
     return LevelLog.objects.create(
         user=user,
         attempt=attempt,
         card=card,
+        language=card.language,
         logged_on=logged_on,
         rating_before=result.rating_before,
         rating_after=result.rating_after,

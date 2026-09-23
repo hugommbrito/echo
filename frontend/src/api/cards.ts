@@ -16,6 +16,7 @@ export function useCards(filters: CardFilters) {
     queryKey: cardKeys.list(filters),
     queryFn: () =>
       api.get<Paginated<Card>>('/cards/', {
+        language: filters.language,
         category: filters.category,
         maturity: filters.maturity,
         level: filters.level,

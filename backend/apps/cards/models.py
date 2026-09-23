@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
+from apps.core.languages import LanguageCode
 from apps.core.models import OwnedModel, TimeStampedModel
 
 
@@ -94,6 +95,7 @@ class Card(OwnedModel):
     """One generated question. `question_text` is immutable once created."""
 
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="cards")
+    language = models.CharField(max_length=8, choices=LanguageCode.choices)
     question_text = models.TextField()
     scenario = models.TextField(null=True, blank=True)
     key_points = models.JSONField(default=list, blank=True)
@@ -120,6 +122,7 @@ class Card(OwnedModel):
             models.Index(fields=["user", "status"]),
             models.Index(fields=["user", "category"]),
             models.Index(fields=["user", "cefr_level"]),
+            models.Index(fields=["user", "language"]),
         ]
 
     def __str__(self) -> str:

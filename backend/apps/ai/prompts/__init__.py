@@ -1,5 +1,9 @@
-"""Prompt templates (docs/PLAN.md §9). System prompts live in .md files next to this module;
-user messages are rendered here so the exact wording is versioned with the code."""
+"""Prompt templates (docs/PLAN.md §9 + multi-language addendum).
+
+System prompts live in .md files next to this module and are rendered per practised language
+from a `LanguageSpec`; user messages are built here so the exact wording is versioned with
+the code.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,8 @@ from functools import cache
 from pathlib import Path
 
 from django.conf import settings
+
+from apps.core.languages import LanguageSpec
 
 PROMPTS_DIR = Path(__file__).resolve().parent
 
@@ -44,8 +50,22 @@ def version() -> str:
 # --- Generation -----------------------------------------------------------------------------
 
 
-def generation_system() -> str:
-    return load_prompt(f"generation_{version()}.md")
+def _language_values(language: LanguageSpec) -> dict[str, str]:
+    return {
+        "target_language": language.target_language_label,
+        "teacher_role": language.teacher_role,
+        "learner_context": language.learner_context,
+        "variety_notes": language.variety_notes,
+        "evaluator_notes": language.evaluator_notes,
+        "level_examples": language.level_examples_block(),
+        "filler_examples": language.filler_examples,
+        "typical_errors": language.typical_errors,
+        "speaking_rate_notes": language.speaking_rate_notes,
+    }
+
+
+def generation_system(language: LanguageSpec) -> str:
+    return render(load_prompt(f"generation_{version()}.md"), **_language_values(language))
 
 
 def generation_user(slots, categories, recent_questions: list[tuple[str, str]]) -> str:
@@ -74,11 +94,12 @@ def generation_user(slots, categories, recent_questions: list[tuple[str, str]]) 
 # --- Evaluation -----------------------------------------------------------------------------
 
 
-def evaluation_system(question_level: str, feedback_language: str) -> str:
+def evaluation_system(language: LanguageSpec, question_level: str, feedback_language: str) -> str:
     return render(
         load_prompt(f"evaluation_{version()}.md"),
         question_level=question_level,
         feedback_language=feedback_language_name(feedback_language),
+        **_language_values(language),
     )
 
 
@@ -116,11 +137,14 @@ def evaluation_user(
 # --- Improved answer (on demand) --------------------------------------------------------------
 
 
-def improved_answer_system(question_level: str, feedback_language: str) -> str:
+def improved_answer_system(
+    language: LanguageSpec, question_level: str, feedback_language: str
+) -> str:
     return render(
         load_prompt(f"improved_answer_{version()}.md"),
         question_level=question_level,
         feedback_language=feedback_language_name(feedback_language),
+        **_language_values(language),
     )
 
 
@@ -141,5 +165,5 @@ def improved_answer_user(
     return "\n".join(lines)
 
 
-def whisper_prompt() -> str:
-    return load_prompt("whisper_prompt.txt")
+def whisper_prompt(language: LanguageSpec) -> str:
+    return language.whisper_prompt

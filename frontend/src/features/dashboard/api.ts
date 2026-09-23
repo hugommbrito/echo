@@ -14,7 +14,7 @@ import type {
   ScoreBucket,
 } from './types'
 
-export type StatsFilters = { from: string; to: string; category: string | null }
+export type StatsFilters = { from: string; to: string; category: string | null; language: string | null }
 
 function getJson<T>(
   path: string,
@@ -24,7 +24,7 @@ function getJson<T>(
 }
 
 function periodParams(filters: StatsFilters) {
-  return { from: filters.from, to: filters.to, category: filters.category }
+  return { from: filters.from, to: filters.to, category: filters.category, language: filters.language }
 }
 
 const common = { placeholderData: keepPreviousData, staleTime: 30_000 } as const
@@ -47,8 +47,13 @@ export function useScores(filters: StatsFilters, bucket: 'day' | 'week') {
 
 export function useLevel(filters: StatsFilters) {
   return useQuery({
-    queryKey: ['stats', 'level', filters.from, filters.to],
-    queryFn: () => getJson<LevelStats>('/stats/level/', { from: filters.from, to: filters.to }),
+    queryKey: ['stats', 'level', filters.from, filters.to, filters.language],
+    queryFn: () =>
+      getJson<LevelStats>('/stats/level/', {
+        from: filters.from,
+        to: filters.to,
+        language: filters.language,
+      }),
     ...common,
   })
 }
@@ -61,18 +66,18 @@ export function useActivity(filters: StatsFilters, bucket: 'day' | 'week') {
   })
 }
 
-export function useForecast(days: number) {
+export function useForecast(days: number, language: string | null) {
   return useQuery({
-    queryKey: ['stats', 'forecast', days],
-    queryFn: () => getJson<Forecast>('/stats/forecast/', { days }),
+    queryKey: ['stats', 'forecast', days, language],
+    queryFn: () => getJson<Forecast>('/stats/forecast/', { days, language }),
     ...common,
   })
 }
 
-export function useCollection() {
+export function useCollection(language: string | null) {
   return useQuery({
-    queryKey: ['stats', 'collection'],
-    queryFn: () => getJson<Collection>('/stats/collection/'),
+    queryKey: ['stats', 'collection', language],
+    queryFn: () => getJson<Collection>('/stats/collection/', { language }),
     ...common,
   })
 }
@@ -87,24 +92,29 @@ export function useGrammarIssues(filters: StatsFilters) {
 
 export function useCategoryStats(filters: StatsFilters) {
   return useQuery({
-    queryKey: ['stats', 'categories', filters.from, filters.to],
-    queryFn: () => getJson<CategoryRow[]>('/stats/categories/', { from: filters.from, to: filters.to }),
+    queryKey: ['stats', 'categories', filters.from, filters.to, filters.language],
+    queryFn: () =>
+      getJson<CategoryRow[]>('/stats/categories/', {
+        from: filters.from,
+        to: filters.to,
+        language: filters.language,
+      }),
     ...common,
   })
 }
 
-export function useHeatmap(year: number, category: string | null) {
+export function useHeatmap(year: number, category: string | null, language: string | null) {
   return useQuery({
-    queryKey: ['stats', 'heatmap', year, category],
-    queryFn: () => getJson<HeatmapCell[]>('/stats/heatmap/', { year, category }),
+    queryKey: ['stats', 'heatmap', year, category, language],
+    queryFn: () => getJson<HeatmapCell[]>('/stats/heatmap/', { year, category, language }),
     ...common,
   })
 }
 
-export function useAdvanced(enabled: boolean) {
+export function useAdvanced(enabled: boolean, language: string | null) {
   return useQuery({
-    queryKey: ['stats', 'advanced'],
-    queryFn: () => getJson<Advanced>('/stats/advanced/'),
+    queryKey: ['stats', 'advanced', language],
+    queryFn: () => getJson<Advanced>('/stats/advanced/', { language }),
     enabled,
     ...common,
   })

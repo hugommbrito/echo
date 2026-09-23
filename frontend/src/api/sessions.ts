@@ -1,24 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { Paginated, Projection, QueueItem, Session, SessionCreate } from '@/types/api'
+import type { LanguageTargets, Paginated, Projection, QueueItem, Session, SessionCreate } from '@/types/api'
 
 import { api, isApiError } from './client'
 
 export interface ProjectionParams {
-  new_cards_target: number
+  /** New cards per active language; serialised as `targets=en:3,fr:2`. */
+  targets: LanguageTargets
   category_ids: string[]
+}
+
+/** `{ en: 3, fr: 2 }` → `['en:3', 'fr:2']` (the query builder joins arrays with commas). */
+export function serializeTargets(targets: LanguageTargets): string[] {
+  return Object.entries(targets)
+    .filter(([, count]) => count !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, count]) => `${code}:${count}`)
 }
 
 export const sessionKeys = {
   all: ['sessions'] as const,
   today: () => [...sessionKeys.all, 'today'] as const,
   detail: (id: string) => [...sessionKeys.all, 'detail', id] as const,
-  queue: (id: string, limit: number) => [...sessionKeys.all, 'queue', id, limit] as const,
+  queue: (id: string, limit: number, language: string | null = null) =>
+    [...sessionKeys.all, 'queue', id, limit, language] as const,
   projection: (params: ProjectionParams) =>
     [
       ...sessionKeys.all,
       'projection',
-      params.new_cards_target,
+      serializeTargets(params.targets).join(','),
       [...params.category_ids].sort().join(','),
     ] as const,
   list: (params: { from?: string; to?: string }) => [...sessionKeys.all, 'list', params] as const,
@@ -47,7 +57,7 @@ export function useProjection(params: ProjectionParams, enabled = true) {
     queryKey: sessionKeys.projection(params),
     queryFn: () =>
       api.get<Projection>('/sessions/projection/', {
-        new_cards_target: params.new_cards_target,
+        targets: serializeTargets(params.targets),
         category_ids: params.category_ids,
       }),
     enabled,
@@ -80,10 +90,15 @@ export function useSession(id: string | undefined) {
   })
 }
 
-export function useSessionQueue(id: string | undefined, limit = 1, enabled = true) {
+export function useSessionQueue(
+  id: string | undefined,
+  limit = 1,
+  language: string | null = null,
+  enabled = true,
+) {
   return useQuery({
-    queryKey: sessionKeys.queue(id ?? '', limit),
-    queryFn: () => api.get<QueueItem[]>(`/sessions/${id}/queue/`, { limit }),
+    queryKey: sessionKeys.queue(id ?? '', limit, language),
+    queryFn: () => api.get<QueueItem[]>(`/sessions/${id}/queue/`, { limit, language }),
     enabled: Boolean(id) && enabled,
     staleTime: 0,
   })

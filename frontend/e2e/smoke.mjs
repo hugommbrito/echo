@@ -50,9 +50,28 @@ try {
   await page.waitForTimeout(800)
   await shot('02-today')
 
-  step('start or continue the session')
+  step('activate French in Settings › Idiomas (idempotent)')
+  await page.goto(`${BASE}/settings?tab=languages`)
+  await page.getByRole('tab', { name: 'Idiomas' }).waitFor({ timeout: 15000 })
+  await page.waitForTimeout(800)
+  const activate = page.getByRole('button', { name: 'Ativar', exact: true })
+  if (await activate.isVisible().catch(() => false)) {
+    await activate.click()
+    await page.getByRole('radio', { name: /A1 — Iniciante/ }).waitFor({ timeout: 5000 })
+    await page.getByRole('button', { name: 'Ativar idioma' }).click()
+  }
+  await page.getByRole('switch', { name: /Pausar francês/ }).waitFor({ timeout: 15000 })
+  await shot('02a-settings-languages')
+
+  step('start or continue the session (1 new card per language)')
+  await page.goto(`${BASE}/today`)
+  await page.waitForTimeout(800)
   const start = page.getByRole('button', { name: /Começar/ })
   if (await start.isVisible().catch(() => false)) {
+    await page.locator('#new-cards-target-en').fill('1')
+    await page.locator('#new-cards-target-fr').fill('1')
+    await page.waitForTimeout(900) // debounced projection
+    await shot('02b-today-mixed')
     await start.click()
   } else {
     await page.getByRole('link', { name: /Continuar|Ver resumo/ }).click()
@@ -65,6 +84,23 @@ try {
     completed.waitFor({ state: 'visible', timeout: 45000 }),
   ])
   if (await record.isVisible().catch(() => false)) {
+    step('filter the queue by language')
+    const languageGroup = page.getByRole('radiogroup', { name: 'Idioma' })
+    if (await languageGroup.isVisible().catch(() => false)) {
+      const french = languageGroup.getByRole('radio', { name: /Francês/ })
+      await french.click()
+      await page.waitForTimeout(800)
+      const frenchCard = page.locator('article[aria-label="Pergunta"][data-language="fr"]')
+      if (await frenchCard.isVisible().catch(() => false)) {
+        if ((await frenchCard.locator('[lang="fr-CA"]').count()) === 0)
+          errors.push('French card without lang="fr-CA"')
+        await shot('03a-session-french')
+      } else {
+        console.log('   (no French card left today — showing all languages)')
+      }
+      await languageGroup.getByRole('radio', { name: /Todos/ }).click()
+      await page.waitForTimeout(600)
+    }
     await shot('03-session-card')
 
     step('record 4 s with the fake microphone')
@@ -106,6 +142,15 @@ try {
   await page.goto(`${BASE}/cards`)
   await page.waitForTimeout(1200)
   await shot('09-cards')
+  await page.goto(`${BASE}/cards?language=fr`)
+  await page.waitForTimeout(1200)
+  const frenchItems = await page.locator('a[href^="/cards/"] [data-language="fr"]').count()
+  const allItems = await page.locator('a[href^="/cards/"]').count()
+  if (allItems !== frenchItems)
+    errors.push(`cards?language=fr shows ${allItems} items, ${frenchItems} French`)
+  await shot('09a-cards-french')
+  await page.goto(`${BASE}/cards`)
+  await page.waitForTimeout(800)
   const firstCard = page.locator('a[href^="/cards/"]').first()
   if (await firstCard.isVisible().catch(() => false)) {
     await firstCard.click()
@@ -118,6 +163,21 @@ try {
   await page.getByText('Evolução do nível').waitFor({ timeout: 20000 })
   await page.waitForTimeout(1500)
   await shot('11-stats-light')
+  const statsLanguages = page.getByRole('radiogroup', { name: 'Idioma' })
+  if (await statsLanguages.isVisible().catch(() => false)) {
+    await statsLanguages.getByRole('radio', { name: /Francês/ }).click()
+    await page.waitForTimeout(1200)
+    await shot('11a-stats-french')
+    await statsLanguages.getByRole('radio', { name: /Todos/ }).click()
+    await page.waitForTimeout(1200)
+    const levelChart = page.locator('figure', {
+      has: page.getByRole('heading', { name: 'Evolução do nível' }),
+    })
+    for (const label of ['Inglês', 'Francês']) {
+      if ((await levelChart.getByText(label, { exact: true }).count()) === 0)
+        errors.push(`level chart legend without ${label}`)
+    }
+  }
   await page.getByRole('radio', { name: /7 dias/ }).click()
   await page.waitForTimeout(1200)
   await shot('12-stats-7d')

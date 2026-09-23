@@ -1,6 +1,6 @@
 # Echo — frontend
 
-Interface web do Echo (prática de inglês falado com repetição espaçada e nível CEFR adaptativo).
+Interface web do Echo (prática de conversação em inglês e francês com repetição espaçada e nível CEFR adaptativo por idioma).
 React 19 + TypeScript + Vite 8, Tailwind CSS v4, TanStack Query, React Router v7. Todo o texto da UI é em pt-BR.
 
 ## Rodando em desenvolvimento

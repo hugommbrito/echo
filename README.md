@@ -1,11 +1,13 @@
 # Echo
 
-Prática de fala em inglês com repetição espaçada (SM-2) e **nível adaptativo estilo ELO**.
+Prática de fala em **inglês e francês (Québec)** com repetição espaçada (SM-2) e **nível adaptativo estilo
+ELO por idioma**.
 A aprendiz lê uma pergunta realista, responde em voz alta, o áudio é transcrito (Whisper) e
 avaliado por Claude em três eixos (estrutura/conteúdo, gramática, fluência). As notas alimentam o
 agendador do card e o rating de nível, que define a dificuldade das próximas perguntas.
 
-Plano completo: [docs/PLAN.md](docs/PLAN.md). Prompts de IA (texto exato, v1): `backend/apps/ai/prompts/`.
+Plano completo: [docs/PLAN.md](docs/PLAN.md) (multi-idioma na §15). Prompts de IA (texto exato, v2, um
+`LanguageSpec` por idioma em `backend/apps/core/languages.py`): `backend/apps/ai/prompts/`.
 
 ## Stack
 Django 5.2 + DRF · PostgreSQL 16 · Celery + Redis · React 19 + Vite + Tailwind + Recharts ·

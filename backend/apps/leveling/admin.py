@@ -8,6 +8,7 @@ from apps.leveling.models import LevelLog
 class LevelLogAdmin(OwnedModelAdmin):
     list_display = [
         "logged_on",
+        "language",
         "card",
         "rating_before",
         "rating_after",
@@ -15,4 +16,5 @@ class LevelLogAdmin(OwnedModelAdmin):
         "question_rating",
         "k_factor",
     ]
+    list_filter = ["language"]
     readonly_fields = [f.name for f in LevelLog._meta.fields]

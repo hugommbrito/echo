@@ -5,6 +5,7 @@ import { useImprovedAnswer } from '@/api/attempts'
 import { isApiError } from '@/api/client'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { languageMeta } from '@/lib/languages'
 import type { Attempt, ImprovedAnswer } from '@/types/api'
 
 function describeError(error: unknown): string {
@@ -35,7 +36,7 @@ export function ImprovedAnswerButton({ attempt }: { attempt: Attempt }) {
         <h3 className="flex items-center gap-2 text-sm font-semibold text-level-accent">
           <Sparkles className="size-4" aria-hidden="true" /> Sugestão de resposta melhorada
         </h3>
-        <p className="whitespace-pre-line leading-relaxed" lang="en">
+        <p className="whitespace-pre-line leading-relaxed" lang={languageMeta(attempt.language).htmlLang}>
           {answer}
         </p>
         {notes.length > 0 ? (

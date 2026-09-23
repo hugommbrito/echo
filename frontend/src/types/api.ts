@@ -10,6 +10,9 @@ export type DecimalString = string
 export type UUID = string
 
 export type CefrBand = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
+/** Practised language (registry: backend `apps/core/languages.py`, frontend `lib/languages.ts`). */
+export type LanguageCode = 'en' | 'fr'
+export type StartingLevel = 'A1' | 'A2' | 'B1'
 export type FeedbackLanguage = 'pt-BR' | 'en'
 export type Probe = 'none' | 'above' | 'below'
 export type CardStatus = 'active' | 'suspended' | 'archived'
@@ -32,6 +35,10 @@ export type GrammarIssueType =
   | 'word_choice'
   | 'missing_word'
   | 'extra_word'
+  | 'agreement'
+  | 'verb_form'
+  | 'negation'
+  | 'register'
   | 'other'
 
 // --- Errors -----------------------------------------------------------------
@@ -60,21 +67,48 @@ export interface UserLevel {
   initial_rating: number
 }
 
+/** One practised language of the learner: own ELO level, activity flag and daily target. */
+export interface LanguageProfile {
+  code: LanguageCode
+  /** Display name from the backend registry (pt-BR), e.g. "Francês (Canadá/Québec)". */
+  name: string
+  is_active: boolean
+  default_new_cards_per_day: number
+  activated_at: ISODateTime
+  level: UserLevel
+}
+
+export interface LanguageCatalogItem {
+  code: LanguageCode
+  name: string
+  name_en: string
+  starting_levels: StartingLevel[]
+}
+
+export interface LanguageProfileCreate {
+  language: LanguageCode
+  starting_level?: StartingLevel
+}
+
+export interface LanguageProfilePatch {
+  is_active?: boolean
+  default_new_cards_per_day?: number
+}
+
 export interface User {
   id: UUID
   email: string
   full_name: string
   timezone: string
   feedback_language: FeedbackLanguage
-  default_new_cards_per_day: number
   is_staff: boolean
-  level: UserLevel
+  /** Every profile (paused ones included, `is_active: false`), ordered by language code. */
+  languages: LanguageProfile[]
 }
 
 export interface UserPatch {
   timezone?: string
   feedback_language?: FeedbackLanguage
-  default_new_cards_per_day?: number
 }
 
 export interface LoginPayload {
@@ -125,6 +159,7 @@ export interface CategoryPatch {
 
 export interface Card {
   id: UUID
+  language: LanguageCode
   category: CategoryBrief
   question_text: string
   scenario: string | null
@@ -166,6 +201,7 @@ export interface CardDetail extends Card {
 }
 
 export interface CardFilters {
+  language?: LanguageCode | ''
   category?: string
   maturity?: Maturity | ''
   level?: CefrBand | ''
@@ -177,14 +213,40 @@ export interface CardFilters {
 
 // --- Sessions ----------------------------------------------------------------
 
+export interface ProjectionLanguage {
+  language: LanguageCode
+  base_level: CefrBand
+  carried_over: number
+  /** Unanswered new cards of this language, regardless of today's target. */
+  available_carry_over: number
+  to_generate: number
+  probes: number
+  due_today: number
+  overdue: number
+  total: number
+}
+
 export interface Projection {
+  languages: ProjectionLanguage[]
   carried_over: number
   to_generate: number
   due_today: number
   overdue: number
   probes: number
-  base_level: CefrBand
   total: number
+}
+
+export type PlanStatus = 'pending' | 'ready' | 'failed'
+
+export interface SessionPlan {
+  language: LanguageCode
+  new_cards_target: number
+  rating_at_start: number
+  base_level: CefrBand
+  generation_status: PlanStatus
+  generation_error: string
+  generated_count: number
+  progress: SessionProgress
 }
 
 export interface SessionProgress {
@@ -198,20 +260,23 @@ export interface SessionProgress {
 export interface Session {
   id: UUID
   session_date: ISODate
+  /** Sum of the per-language targets. */
   new_cards_target: number
   categories: CategoryBrief[]
   status: SessionStatus
   generation_error: string
-  rating_at_start: number
   completed_at: ISODateTime | null
   created_at: ISODateTime
+  plans: SessionPlan[]
   progress: SessionProgress
   projected: Projection | null
 }
 
+export type LanguageTargets = Partial<Record<LanguageCode, number>>
+
 export interface SessionCreate {
   category_ids: UUID[]
-  new_cards_target: number
+  new_cards_targets: LanguageTargets
 }
 
 export interface QueueItem {
@@ -300,6 +365,7 @@ export interface Attempt {
   failure_stage: string
   error_message: string
   card_id: UUID
+  language: LanguageCode
   session_id: UUID | null
   attempt_number: number
   attempted_on: ISODate

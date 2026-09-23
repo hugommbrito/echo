@@ -2,8 +2,9 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recha
 import { ChartCard, LegendRow, TooltipFrame } from './ChartCard'
 import { gapRect } from './shapes'
 import { fmtInt, MATURITY_LABELS } from './format'
+import { languageMeta, sortByLanguage } from '@/lib/languages'
 import type { Collection } from './types'
-import type { ChartColors } from './useChartColors'
+import { languageColor, type ChartColors } from './useChartColors'
 
 const KEYS = ['new', 'learning', 'mature'] as const
 type Row = Collection['by_category'][number] & { name: string }
@@ -36,7 +37,9 @@ export function CollectionChart({
   loading?: boolean
 }) {
   const rows: Row[] = collection.by_category.map((c) => ({ ...c, name: c.category.name }))
-  const maxLevel = Math.max(1, ...collection.by_level.map((l) => l.count))
+  const byLevel = sortByLanguage(collection.by_level, (l) => l.language)
+  const maxLevel = Math.max(1, ...byLevel.flatMap((l) => l.levels.map((x) => x.count)))
+  const levels = byLevel[0]?.levels.map((x) => x.level) ?? ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
   const End = gapRect('horizontal', true)
   const Mid = gapRect('horizontal', false)
   const height = Math.max(120, rows.length * 34 + 16)
@@ -56,17 +59,41 @@ export function CollectionChart({
       footer={
         <div>
           <p className="mb-1.5">Por nível CEFR</p>
+          {byLevel.length > 1 ? (
+            <LegendRow
+              shape="rect"
+              items={byLevel.map((l) => ({
+                key: l.language,
+                label: languageMeta(l.language).label,
+                color: languageColor(colors, l.language),
+              }))}
+            />
+          ) : null}
           <ul className="grid grid-cols-6 gap-2">
-            {collection.by_level.map((l) => (
-              <li key={l.level} className="text-center">
-                <div className="mx-auto flex h-10 w-4 items-end rounded-sm bg-bg" aria-hidden>
-                  <div
-                    className="w-full rounded-sm"
-                    style={{ height: `${(l.count / maxLevel) * 100}%`, background: colors.mature }}
-                  />
+            {levels.map((level) => (
+              <li key={level} className="text-center">
+                <div className="mx-auto flex h-10 items-end justify-center gap-0.5" aria-hidden>
+                  {byLevel.map((l) => {
+                    const count = l.levels.find((x) => x.level === level)?.count ?? 0
+                    return (
+                      <div key={l.language} className="flex h-full w-4 items-end rounded-sm bg-bg">
+                        <div
+                          className="w-full rounded-sm"
+                          style={{
+                            height: `${(count / maxLevel) * 100}%`,
+                            background: languageColor(colors, l.language),
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
-                <p className="mt-1 text-fg">{l.level}</p>
-                <p className="tabular-nums">{fmtInt(l.count)}</p>
+                <p className="mt-1 text-fg">{level}</p>
+                <p className="tabular-nums">
+                  {byLevel
+                    .map((l) => fmtInt(l.levels.find((x) => x.level === level)?.count ?? 0))
+                    .join(' · ')}
+                </p>
               </li>
             ))}
           </ul>

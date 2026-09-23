@@ -3,8 +3,11 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { useLogout, useMe } from '@/api/auth'
 import { Button } from '@/components/ui/button'
+import { LanguageTag } from '@/components/ui/LanguageTag'
 import { LevelBadge } from '@/components/ui/LevelBadge'
 import { cn } from '@/lib/cn'
+import { activeLanguages, languageMeta } from '@/lib/languages'
+import type { LanguageProfile } from '@/types/api'
 
 const NAV = [
   { to: '/today', label: 'Hoje', icon: Sun },
@@ -60,14 +63,7 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2">
-            {me.data ? (
-              <NavLink
-                to="/stats"
-                aria-label={`Seu nível: ${me.data.level.band}, ${me.data.level.rating} pontos`}
-              >
-                <LevelBadge band={me.data.level.band} rating={me.data.level.rating} size="md" />
-              </NavLink>
-            ) : null}
+            {me.data ? <LevelBadges profiles={activeLanguages(me.data)} /> : null}
             <Button
               variant="ghost"
               size="icon"
@@ -110,6 +106,46 @@ export function AppShell() {
           ))}
         </ul>
       </nav>
+    </div>
+  )
+}
+
+/** One level pill per active language (rating hidden on phones); a link to Settings when none. */
+function LevelBadges({ profiles }: { profiles: LanguageProfile[] }) {
+  if (profiles.length === 0) {
+    return (
+      <Button asChild variant="ghost" size="sm">
+        <NavLink to="/settings?tab=languages">Ativar idioma</NavLink>
+      </Button>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1.5" aria-label="Seus níveis">
+      {profiles.map((profile) => {
+        const meta = languageMeta(profile.code)
+        return (
+          <NavLink
+            key={profile.code}
+            to={`/stats?language=${profile.code}`}
+            aria-label={`Seu nível ${meta.inPhrase}: ${profile.level.band}, ${profile.level.rating} pontos`}
+            className="inline-flex"
+          >
+            <LevelBadge
+              band={profile.level.band}
+              rating={profile.level.rating}
+              tag={<LanguageTag code={profile.code} bare />}
+              size="md"
+              className="hidden sm:inline-flex"
+            />
+            <LevelBadge
+              band={profile.level.band}
+              tag={<LanguageTag code={profile.code} bare />}
+              size="sm"
+              className="sm:hidden"
+            />
+          </NavLink>
+        )
+      })}
     </div>
   )
 }

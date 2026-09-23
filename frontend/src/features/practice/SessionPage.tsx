@@ -1,16 +1,21 @@
-import { ArrowRight, PartyPopper, RotateCcw } from 'lucide-react'
+import { ArrowRight, Check, PartyPopper, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAttempt, useCreateAttempt, useInvalidateAfterAttempt, useRetryAttempt } from '@/api/attempts'
+import { useMe } from '@/api/auth'
 import { isApiError } from '@/api/client'
 import { useRetryGeneration, useSession, useSessionQueue } from '@/api/sessions'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { LanguageTag } from '@/components/ui/LanguageTag'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import type { QueueItem, Session } from '@/types/api'
+import { cn } from '@/lib/cn'
+import { formatNumber, formatSigned } from '@/lib/format'
+import { findProfile, languageMeta } from '@/lib/languages'
+import type { QueueItem, Session, SessionPlan } from '@/types/api'
 
 import { AttemptHistory } from './AttemptHistory'
 import { CardPrompt } from './CardPrompt'
@@ -55,11 +60,7 @@ export function SessionPage() {
       <div className="flex flex-col items-center gap-4 py-24 text-center">
         <Spinner size="lg" label="Gerando perguntas" />
         <h1 className="text-display text-2xl">Gerando suas perguntas…</h1>
-        <p className="max-w-sm text-sm text-fg-muted">
-          {data.projected
-            ? `Preparando ${data.projected.to_generate} ${data.projected.to_generate === 1 ? 'pergunta nova' : 'perguntas novas'} no nível ${data.projected.base_level}. Isso leva alguns segundos.`
-            : 'Isso leva alguns segundos.'}
-        </p>
+        <p className="max-w-sm text-sm text-fg-muted">{generatingText(data)}</p>
       </div>
     )
   }
@@ -91,19 +92,48 @@ export function SessionPage() {
   return <SessionRunner session={data} />
 }
 
+/** "Preparando 3 perguntas em inglês (A2) e 2 em francês (A1). Isso leva alguns segundos." */
+function generatingText(session: Session): string {
+  const parts = session.plans
+    .filter((plan) => plan.new_cards_target > 0 && plan.generation_status !== 'ready')
+    .map(
+      (plan) =>
+        `${plan.new_cards_target} ${plan.new_cards_target === 1 ? 'pergunta' : 'perguntas'} ${languageMeta(plan.language).inPhrase} (${plan.base_level})`,
+    )
+  if (parts.length === 0) return 'Isso leva alguns segundos.'
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`
+  return `Preparando ${list}. Isso leva alguns segundos.`
+}
+
 // ---------------------------------------------------------------------------
 
 function SessionRunner({ session }: { session: Session }) {
   const [run, setRun] = useState(0)
-  const queue = useSessionQueue(session.id, 1)
+  const [params, setParams] = useSearchParams()
+  const requested = params.get('language')
+  const language = requested && session.plans.some((p) => p.language === requested) ? requested : null
+  const queue = useSessionQueue(session.id, 1, language)
   const { progress } = session
   const total = progress.new_total + progress.due_total
   const done = progress.new_done + progress.due_done
   const item = queue.data?.[0]
+  const current = language ? session.plans.find((p) => p.language === language) : null
 
   const next = () => {
     setRun((r) => r + 1)
     void queue.refetch()
+  }
+
+  const selectLanguage = (code: string | null) => {
+    setParams(
+      (prev) => {
+        const nextParams = new URLSearchParams(prev)
+        if (code) nextParams.set('language', code)
+        else nextParams.delete('language')
+        return nextParams
+      },
+      { replace: true },
+    )
   }
 
   return (
@@ -114,10 +144,24 @@ function SessionRunner({ session }: { session: Session }) {
             {done} <span className="text-fg-muted">de {total}</span>
           </h1>
           <p className="text-sm text-fg-muted tabular">
-            Novos {progress.new_done}/{progress.new_total} · Revisões {progress.due_done}/{progress.due_total}
+            {current ? (
+              <>
+                {languageMeta(current.language).label}: novos {current.progress.new_done}/
+                {current.progress.new_total} · revisões {current.progress.due_done}/
+                {current.progress.due_total}
+              </>
+            ) : (
+              <>
+                Novos {progress.new_done}/{progress.new_total} · Revisões {progress.due_done}/
+                {progress.due_total}
+              </>
+            )}
           </p>
         </div>
         <Progress value={total > 0 ? (done / total) * 100 : 100} size="sm" label="Progresso da sessão" />
+        {session.plans.length > 1 ? (
+          <LanguageFilter plans={session.plans} value={language} onChange={selectLanguage} />
+        ) : null}
       </header>
 
       {queue.isPending ? (
@@ -132,6 +176,8 @@ function SessionRunner({ session }: { session: Session }) {
             Tentar de novo
           </Button>
         </Alert>
+      ) : !item && language && progress.remaining > 0 ? (
+        <LanguageDone language={language} onShowAll={() => selectLanguage(null)} />
       ) : !item ? (
         <Completion session={session} />
       ) : (
@@ -141,8 +187,78 @@ function SessionRunner({ session }: { session: Session }) {
   )
 }
 
+function LanguageFilter({
+  plans,
+  value,
+  onChange,
+}: {
+  plans: SessionPlan[]
+  value: string | null
+  onChange: (code: string | null) => void
+}) {
+  const options: { key: string | null; label: string; done: number; total: number }[] = [
+    {
+      key: null,
+      label: 'Todos',
+      done: plans.reduce((s, p) => s + p.progress.new_done + p.progress.due_done, 0),
+      total: plans.reduce((s, p) => s + p.progress.new_total + p.progress.due_total, 0),
+    },
+    ...plans.map((p) => ({
+      key: p.language,
+      label: languageMeta(p.language).label,
+      done: p.progress.new_done + p.progress.due_done,
+      total: p.progress.new_total + p.progress.due_total,
+    })),
+  ]
+  return (
+    <div
+      className="inline-flex flex-wrap rounded-lg border border-border bg-surface p-0.5 text-sm"
+      role="radiogroup"
+      aria-label="Idioma"
+    >
+      {options.map((option) => {
+        const checked = value === option.key
+        return (
+          <button
+            key={option.key ?? 'all'}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            onClick={() => onChange(option.key)}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 tabular',
+              checked ? 'bg-bg font-semibold text-fg' : 'text-fg-muted hover:text-fg',
+            )}
+          >
+            {checked ? <Check className="size-4" strokeWidth={3} aria-hidden="true" /> : null}
+            {option.key ? <LanguageTag code={option.key} full bare /> : option.label}
+            <span className="text-xs text-fg-muted">
+              {option.done}/{option.total}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function LanguageDone({ language, onShowAll }: { language: string; onShowAll: () => void }) {
+  const meta = languageMeta(language)
+  return (
+    <div className="flex flex-col items-center gap-4 py-16 text-center">
+      <Check className="size-10 text-success" aria-hidden="true" />
+      <h2 className="text-display text-3xl">Você terminou o {meta.label.toLowerCase()} de hoje.</h2>
+      <p className="text-fg-muted">Ainda há cards nos outros idiomas.</p>
+      <Button size="lg" onClick={onShowAll}>
+        Ver os outros idiomas <ArrowRight />
+      </Button>
+    </div>
+  )
+}
+
 function Completion({ session }: { session: Session }) {
   const { progress } = session
+  const me = useMe()
   return (
     <div className="flex flex-col items-center gap-5 py-16 text-center">
       <PartyPopper className="size-12 text-level-accent" aria-hidden="true" />
@@ -151,6 +267,29 @@ function Completion({ session }: { session: Session }) {
         {progress.new_done} {progress.new_done === 1 ? 'pergunta nova' : 'perguntas novas'} ·{' '}
         {progress.due_done} {progress.due_done === 1 ? 'revisão' : 'revisões'}
       </p>
+      {session.plans.length > 0 ? (
+        <ul className="space-y-1 text-sm text-fg-muted tabular" aria-label="Por idioma">
+          {session.plans.map((plan) => {
+            const profile = findProfile(me.data, plan.language)
+            const delta = profile ? profile.level.rating - plan.rating_at_start : null
+            return (
+              <li key={plan.language} className="flex flex-wrap items-center justify-center gap-x-2">
+                <LanguageTag code={plan.language} full bare />
+                <span>
+                  {plan.progress.new_done} {plan.progress.new_done === 1 ? 'nova' : 'novas'} ·{' '}
+                  {plan.progress.due_done} {plan.progress.due_done === 1 ? 'revisão' : 'revisões'}
+                </span>
+                {profile ? (
+                  <span>
+                    · nível {formatNumber(profile.level.rating)} · {profile.level.band}
+                    {delta ? ` (${formatSigned(delta)})` : ''}
+                  </span>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button asChild size="lg">
           <Link to="/stats">
@@ -223,7 +362,12 @@ function CardRunner({ item, sessionId, onNext }: { item: QueueItem; sessionId: s
     return (
       <div className="space-y-6">
         <CardPrompt card={item.card} kind={item.kind} origin={item.origin} dueDate={item.due_date} />
-        <Recorder onSubmit={submit} submitting={create.isPending} submitError={submitError} />
+        <Recorder
+          onSubmit={submit}
+          submitting={create.isPending}
+          submitError={submitError}
+          language={item.card.language}
+        />
         <AttemptHistory cardId={item.card.id} />
       </div>
     )

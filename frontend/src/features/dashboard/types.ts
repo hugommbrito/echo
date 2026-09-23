@@ -21,30 +21,49 @@ export type Overview = {
   due: { today: number; overdue: number; next_7_days: number }
   collection: { total: number; new: number; learning: number; mature: number; suspended: number }
   scores: { period: ScoreSummary; previous_period: ScoreSummary }
-  level: {
-    rating: number
-    band: string
-    delta_period: number
-    provisional: boolean
-    counted_attempts: number
-    initial_rating: number
-    next_band: { label: string; points_needed: number } | null
-  }
+  /** One entry per active language (plus a paused one when it is requested explicitly). */
+  levels: LevelOverview[]
+}
+
+export type LevelOverview = {
+  language: string
+  rating: number
+  band: string
+  delta_period: number
+  provisional: boolean
+  counted_attempts: number
+  initial_rating: number
+  is_active: boolean
+  next_band: { label: string; points_needed: number } | null
 }
 
 export type ScoreBucket = ScoreSummary & { bucket_start: string }
 
-export type LevelStats = {
-  period: Period
+export type LevelEvent = {
+  date: string
+  delta: number
+  rating_after: number
+  probe: 'above' | 'below'
+  hit: boolean
+}
+
+export type LevelSeries = {
+  language: string
   points: { date: string; rating_after: number }[]
-  bands: { label: string; min: number; max: number; center: number }[]
   probes: Record<
     'above' | 'below',
     { answered: number; hits: number; avg_actual: number | null; avg_delta: number | null }
   >
-  events: { date: string; delta: number; rating_after: number; probe: 'above' | 'below'; hit: boolean }[]
+  events: LevelEvent[]
   current: { rating: number; band: string }
   initial_rating: number
+  is_active: boolean
+}
+
+export type LevelStats = {
+  period: Period
+  bands: { label: string; min: number; max: number; center: number }[]
+  series: LevelSeries[]
 }
 
 export type ActivityBucket = {
@@ -67,7 +86,15 @@ export type Collection = {
     mature: number
     total: number
   }[]
-  by_level: { level: string; count: number }[]
+  by_level: { language: string; levels: { level: string; count: number }[] }[]
+  by_language: {
+    language: string
+    total: number
+    new: number
+    learning: number
+    mature: number
+    suspended: number
+  }[]
 }
 
 export type GrammarIssues = {

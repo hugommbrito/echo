@@ -17,6 +17,7 @@ from apps.ai.clients.base import LLMResult, TranscriptionResult
 from apps.ai.exceptions import AIError, TranscriptionError
 from apps.ai.models import AIRequestKind, AIRequestLog, AIRequestStatus
 from apps.ai.schemas import EvaluationOutput, GenerationOutput, ImprovedAnswerOutput
+from apps.core.languages import LanguageSpec, get_language
 
 log = logging.getLogger("echo.ai")
 
@@ -30,10 +31,12 @@ def _log_llm(
     error: str = "",
     latency_ms: int = 0,
     related=None,
+    language: str = "",
 ) -> AIRequestLog:
     return AIRequestLog.objects.create(
         user=user,
         kind=kind,
+        language=language,
         provider=get_llm().provider,
         model=result.model if result else model,
         input_tokens=result.input_tokens if result else 0,
@@ -71,6 +74,7 @@ def _call(
     related=None,
     timeout: float | None = None,
     max_tokens: int = 8000,
+    language: str = "",
 ):
     started = time.monotonic()
     try:
@@ -92,10 +96,11 @@ def _call(
             error=str(exc),
             latency_ms=int((time.monotonic() - started) * 1000),
             related=related,
+            language=language,
         )
         log.warning("ai.%s failed for user=%s: %s", kind, user.pk, exc)
         raise
-    _log_llm(user, kind, result, model=model, related=related)
+    _log_llm(user, kind, result, model=model, related=related, language=language)
     return result
 
 
@@ -103,17 +108,18 @@ def _call(
 
 
 def generate_questions(
-    *, user, slots, categories, recent_questions, related=None
+    *, user, language: LanguageSpec, slots, categories, recent_questions, related=None
 ) -> LLMResult[GenerationOutput]:
     return _call(
         user,
         AIRequestKind.GENERATE_QUESTIONS,
         model=settings.ECHO_GENERATION_MODEL,
-        system=prompts.generation_system(),
+        system=prompts.generation_system(language),
         user_message=prompts.generation_user(slots, categories, recent_questions),
         output_format=GenerationOutput,
         effort=settings.ECHO_GENERATION_EFFORT,
         related=related,
+        language=language.code,
     )
 
 
@@ -130,11 +136,12 @@ def evaluate_transcript(
     words_per_minute: float,
     related=None,
 ) -> LLMResult[EvaluationOutput]:
+    language = get_language(card.language)
     return _call(
         user,
         AIRequestKind.EVALUATE,
         model=settings.ECHO_EVALUATION_MODEL,
-        system=prompts.evaluation_system(card.cefr_level, user.feedback_language),
+        system=prompts.evaluation_system(language, card.cefr_level, user.feedback_language),
         user_message=prompts.evaluation_user(
             category_name=card.category.name,
             question_level=card.cefr_level,
@@ -149,6 +156,7 @@ def evaluate_transcript(
         output_format=EvaluationOutput,
         effort=settings.ECHO_EVALUATION_EFFORT,
         related=related,
+        language=language.code,
     )
 
 
@@ -158,11 +166,12 @@ def evaluate_transcript(
 def improve_answer(
     *, user, card, transcript_text: str, issues: list[dict], related=None
 ) -> LLMResult[ImprovedAnswerOutput]:
+    language = get_language(card.language)
     return _call(
         user,
         AIRequestKind.IMPROVE_ANSWER,
         model=settings.ECHO_IMPROVED_ANSWER_MODEL,
-        system=prompts.improved_answer_system(card.cefr_level, user.feedback_language),
+        system=prompts.improved_answer_system(language, card.cefr_level, user.feedback_language),
         user_message=prompts.improved_answer_user(
             question_text=card.question_text,
             scenario=card.scenario,
@@ -174,6 +183,7 @@ def improve_answer(
         related=related,
         timeout=settings.ECHO_IMPROVED_ANSWER_TIMEOUT_SECONDS,
         max_tokens=4000,
+        language=language.code,
     )
 
 
@@ -181,17 +191,21 @@ def improve_answer(
 
 
 def transcribe_audio(
-    *, user, path, audio_seconds: float | None, related=None
+    *, user, path, audio_seconds: float | None, language: str, related=None
 ) -> TranscriptionResult:
+    spec = get_language(language)
     transcriber = get_transcriber()
     model = settings.ECHO_TRANSCRIPTION_MODEL
     started = time.monotonic()
     try:
-        result = transcriber.transcribe(path, model=model)
+        result = transcriber.transcribe(
+            path, model=model, language=spec.whisper_code, prompt=prompts.whisper_prompt(spec)
+        )
     except TranscriptionError as exc:
         AIRequestLog.objects.create(
             user=user,
             kind=AIRequestKind.TRANSCRIBE,
+            language=spec.code,
             provider=transcriber.provider,
             model=model,
             audio_seconds=Decimal(str(audio_seconds)) if audio_seconds else None,
@@ -206,6 +220,7 @@ def transcribe_audio(
     AIRequestLog.objects.create(
         user=user,
         kind=AIRequestKind.TRANSCRIBE,
+        language=spec.code,
         provider=transcriber.provider,
         model=result.model,
         audio_seconds=Decimal(str(round(seconds, 2))),

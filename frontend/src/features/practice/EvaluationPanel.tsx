@@ -7,6 +7,7 @@ import { ScorePill } from '@/components/ui/ScorePill'
 import { AXES, AXIS_COLORS, type Axis } from '@/lib/colors'
 import { formatDateShort, formatDecimal, plural, pluralDays } from '@/lib/format'
 import { grammarIssueLabel } from '@/lib/labels'
+import { languageMeta } from '@/lib/languages'
 import type { Attempt, Evaluation, GrammarIssue, Review } from '@/types/api'
 
 import { ImprovedAnswerButton } from './ImprovedAnswerButton'
@@ -17,6 +18,7 @@ export interface EvaluationPanelProps {
 
 export function EvaluationPanel({ attempt }: EvaluationPanelProps) {
   const evaluation = attempt.evaluation
+  const lang = languageMeta(attempt.language).htmlLang
 
   if (attempt.insufficient_speech) {
     return (
@@ -61,12 +63,14 @@ export function EvaluationPanel({ attempt }: EvaluationPanelProps) {
         ))}
       </div>
 
-      {evaluation.grammar.issues.length > 0 ? <GrammarIssues issues={evaluation.grammar.issues} /> : null}
+      {evaluation.grammar.issues.length > 0 ? (
+        <GrammarIssues issues={evaluation.grammar.issues} lang={lang} />
+      ) : null}
 
       {evaluation.key_points.length > 0 ? (
         <section className="rounded-2xl border border-border bg-surface p-5">
           <h3 className="text-sm font-semibold">O que uma resposta completa costuma cobrir</h3>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm" lang="en">
             {evaluation.key_points.map((point, i) => (
               <li key={i}>{point}</li>
             ))}
@@ -109,7 +113,7 @@ function AxisBlock({ axis, evaluation }: { axis: Axis; evaluation: Evaluation })
   )
 }
 
-function GrammarIssues({ issues }: { issues: GrammarIssue[] }) {
+function GrammarIssues({ issues, lang }: { issues: GrammarIssue[]; lang: string }) {
   const token = AXIS_COLORS.grammar
   return (
     <section aria-label="Correções de gramática" className="rounded-2xl border border-border bg-surface p-5">
@@ -119,7 +123,7 @@ function GrammarIssues({ issues }: { issues: GrammarIssue[] }) {
       <ul className="mt-3 divide-y divide-border">
         {issues.map((issue, i) => (
           <li key={i} className="space-y-1 py-3 first:pt-0 last:pb-0">
-            <div className="flex flex-wrap items-center gap-2 text-sm" lang="en">
+            <div className="flex flex-wrap items-center gap-2 text-sm" lang={lang}>
               <span className="line-through decoration-danger/60 text-fg-muted">{issue.quote}</span>
               <ArrowRight className="size-4 shrink-0 text-fg-muted" aria-hidden="true" />
               <span className="font-medium">{issue.correction}</span>
@@ -137,6 +141,7 @@ function GrammarIssues({ issues }: { issues: GrammarIssue[] }) {
 
 function Transcript({ attempt }: { attempt: Attempt }) {
   if (!attempt.transcript_text) return null
+  const lang = languageMeta(attempt.language).htmlLang
   return (
     <details className="group rounded-2xl border border-border bg-surface">
       <summary className="cursor-pointer select-none px-5 py-3 text-sm font-medium marker:text-fg-muted">
@@ -150,7 +155,7 @@ function Transcript({ attempt }: { attempt: Attempt }) {
       </summary>
       <p
         className="whitespace-pre-line border-t border-border px-5 py-4 text-sm leading-relaxed text-fg-muted"
-        lang="en"
+        lang={lang}
       >
         {attempt.transcript_text}
       </p>

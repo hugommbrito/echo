@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import models
 
+from apps.core.languages import LanguageCode
 from apps.core.models import OwnedModel
 from apps.core.storage import attempt_audio_path
 
@@ -11,6 +12,12 @@ class SessionStatus(models.TextChoices):
     READY = "ready", "Ready"
     IN_PROGRESS = "in_progress", "In progress"
     COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
+class PlanStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    READY = "ready", "Ready"
     FAILED = "failed", "Failed"
 
 
@@ -34,13 +41,11 @@ PIPELINE_STAGES = ["probing", "transcribing", "evaluating", "scheduling"]
 
 class DailySession(OwnedModel):
     session_date = models.DateField()
-    new_cards_target = models.PositiveSmallIntegerField()
     categories = models.ManyToManyField("cards.Category", related_name="sessions", blank=True)
     status = models.CharField(
         max_length=12, choices=SessionStatus.choices, default=SessionStatus.GENERATING
     )
     generation_error = models.TextField(blank=True)
-    rating_at_start = models.IntegerField()
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta(OwnedModel.Meta):
@@ -51,6 +56,35 @@ class DailySession(OwnedModel):
 
     def __str__(self) -> str:
         return f"{self.user_id} {self.session_date} ({self.status})"
+
+    @property
+    def new_cards_target_total(self) -> int:
+        return sum(plan.new_cards_target for plan in self.plans.all())
+
+
+class SessionLanguagePlan(OwnedModel):
+    """Per-language part of a daily session: target, rating snapshot and generation state."""
+
+    session = models.ForeignKey(DailySession, on_delete=models.CASCADE, related_name="plans")
+    language = models.CharField(max_length=8, choices=LanguageCode.choices)
+    new_cards_target = models.PositiveSmallIntegerField()
+    rating_at_start = models.IntegerField()
+    generation_status = models.CharField(
+        max_length=8, choices=PlanStatus.choices, default=PlanStatus.PENDING
+    )
+    generation_error = models.TextField(blank=True)
+    generated_count = models.PositiveSmallIntegerField(default=0)
+
+    class Meta(OwnedModel.Meta):
+        ordering = ["language"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "session", "language"], name="uniq_session_language_plan"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.session_id} {self.language} x{self.new_cards_target}"
 
 
 class SessionNewCard(OwnedModel):

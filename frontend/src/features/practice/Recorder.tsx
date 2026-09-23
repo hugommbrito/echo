@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/format'
+import { languageMeta } from '@/lib/languages'
 
 import { MAX_SECONDS, MIN_SECONDS, useAudioRecorder, type Recording } from './hooks/useAudioRecorder'
 
@@ -13,9 +14,17 @@ export interface RecorderProps {
   submitting?: boolean
   submitError?: string | null
   disabled?: boolean
+  /** Card language → "Responda em francês" above the button. */
+  language?: string
 }
 
-export function Recorder({ onSubmit, submitting = false, submitError, disabled = false }: RecorderProps) {
+export function Recorder({
+  onSubmit,
+  submitting = false,
+  submitError,
+  disabled = false,
+  language,
+}: RecorderProps) {
   const rec = useAudioRecorder()
   const isRecording = rec.status === 'recording'
   const isRequesting = rec.status === 'requesting'
@@ -27,6 +36,16 @@ export function Recorder({ onSubmit, submitting = false, submitError, disabled =
   return (
     <section aria-label="Gravador" className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
       <div className="flex flex-col items-center gap-4">
+        {language ? (
+          <p className="inline-flex items-center gap-2 text-sm font-medium">
+            <span
+              aria-hidden="true"
+              className="size-2 rounded-full"
+              style={{ backgroundColor: `var(${languageMeta(language).colorVar})` }}
+            />
+            Responda {languageMeta(language).inPhrase}
+          </p>
+        ) : null}
         {!hasRecording ? (
           <button
             type="button"

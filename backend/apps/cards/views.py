@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from apps.accounts.scoping import OwnedQuerySetMixin
 from apps.cards.models import Card, CardStatus, Category
 from apps.cards.serializers import CardDetailSerializer, CardSerializer, CategorySerializer
+from apps.core.languages import language_codes
 
 
 @extend_schema(parameters=[OpenApiParameter("active", bool, description="Only active categories")])
@@ -47,6 +48,7 @@ class CategoryViewSet(
 
 @extend_schema(
     parameters=[
+        OpenApiParameter("language", str, enum=language_codes()),
         OpenApiParameter("category", str, description="Category id or slug"),
         OpenApiParameter("maturity", str, enum=["new", "learning", "mature"]),
         OpenApiParameter("level", str, enum=["A1", "A2", "B1", "B2", "C1", "C2"]),
@@ -72,6 +74,8 @@ class CardViewSet(OwnedQuerySetMixin, viewsets.ReadOnlyModelViewSet):
 
     def filter_queryset(self, queryset):
         params = self.request.query_params
+        if language := params.get("language"):
+            queryset = queryset.filter(language=language)
         if category := params.get("category"):
             queryset = (
                 queryset.filter(Q(category__slug=category) | Q(category_id=category))

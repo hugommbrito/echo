@@ -35,6 +35,8 @@ describe('buildQuery', () => {
     ).toBe('?new_cards_target=3&category_ids=a%2Cb')
     expect(buildQuery()).toBe('')
     expect(buildQuery({ category_ids: [] })).toBe('')
+    // per-language session targets travel as `lang:count` pairs joined by commas
+    expect(buildQuery({ targets: ['en:3', 'fr:2'] })).toBe('?targets=en%3A3%2Cfr%3A2')
   })
 })
 

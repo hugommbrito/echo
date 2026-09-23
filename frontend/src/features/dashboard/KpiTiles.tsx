@@ -1,9 +1,10 @@
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { languageMeta, sortByLanguage } from '@/lib/languages'
 import { Sparkline } from './Sparkline'
 import { fmtInt, fmtScore, fmtSigned, MATURITY_LABELS } from './format'
-import type { Forecast, Overview } from './types'
-import type { ChartColors } from './useChartColors'
+import type { Forecast, LevelOverview, Overview } from './types'
+import { languageColor, type ChartColors } from './useChartColors'
 
 function Tile({
   label,
@@ -59,7 +60,8 @@ export function KpiTiles({
   forecast?: Forecast
   colors: ChartColors
 }) {
-  const { today, due, collection, scores, level } = overview
+  const { today, due, collection, scores } = overview
+  const levels = sortByLanguage(overview.levels, (l) => l.language)
   const sparkValues = forecast ? forecast.days.slice(0, 7).map((d) => d.due) : []
   const total = collection.total || 1
   const composite = scores.period.composite_avg
@@ -81,29 +83,45 @@ export function KpiTiles({
         }
         sub={`${fmtInt(today.new_answered)} novos · ${fmtInt(today.due_answered)} rev.`}
       />
-      <Tile
-        label="Nível"
-        value={
-          <>
-            {level.band} <span className="text-lg font-normal text-fg-muted">· {fmtInt(level.rating)}</span>
-          </>
-        }
-        sub={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <Delta value={level.delta_period} />
-            {level.next_band ? (
-              <span>
-                {fmtInt(level.next_band.points_needed)} pts p/ {level.next_band.label}
-              </span>
-            ) : (
-              <span>banda máxima</span>
-            )}
-            {level.provisional ? (
-              <span className="rounded bg-bg px-1.5 py-0.5 text-xs">provisório</span>
-            ) : null}
-          </span>
-        }
-      />
+      {levels.length === 1 ? (
+        <Tile
+          label="Nível"
+          value={
+            <>
+              {levels[0].band}{' '}
+              <span className="text-lg font-normal text-fg-muted">· {fmtInt(levels[0].rating)}</span>
+            </>
+          }
+          sub={<LevelSub level={levels[0]} />}
+        />
+      ) : (
+        <div className="flex min-w-0 flex-col rounded-2xl border border-border bg-surface p-4 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Nível</p>
+          {levels.length === 0 ? (
+            <p className="mt-1 text-sm text-fg-muted">Nenhum idioma ativo</p>
+          ) : (
+            <ul className="mt-1 space-y-1.5">
+              {levels.map((level) => (
+                <li key={level.language}>
+                  <p className="flex items-center gap-1.5 text-xl font-semibold leading-none text-fg">
+                    <span
+                      aria-hidden
+                      className="inline-block size-2 rounded-full"
+                      style={{ background: languageColor(colors, level.language) }}
+                    />
+                    <span className="sr-only">{languageMeta(level.language).label}</span>
+                    {level.band}{' '}
+                    <span className="text-base font-normal text-fg-muted">· {fmtInt(level.rating)}</span>
+                  </p>
+                  <div className="mt-0.5 text-xs text-fg-muted">
+                    <LevelSub level={level} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <Tile
         label="Vencem em 7 dias"
         value={fmtInt(due.today + due.next_7_days)}
@@ -141,5 +159,21 @@ export function KpiTiles({
         }
       />
     </section>
+  )
+}
+
+function LevelSub({ level }: { level: LevelOverview }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <Delta value={level.delta_period} />
+      {level.next_band ? (
+        <span>
+          {fmtInt(level.next_band.points_needed)} pts p/ {level.next_band.label}
+        </span>
+      ) : (
+        <span>banda máxima</span>
+      )}
+      {level.provisional ? <span className="rounded bg-bg px-1.5 py-0.5 text-xs">provisório</span> : null}
+    </span>
   )
 }

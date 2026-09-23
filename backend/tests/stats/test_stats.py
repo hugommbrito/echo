@@ -7,6 +7,7 @@ import pytest
 import time_machine
 from django.core.files.base import ContentFile
 
+from apps.accounts.models import LanguageProfile
 from apps.core.context import owner_context
 from apps.leveling.services import apply_level_result
 from apps.practice.models import Attempt, Evaluation
@@ -142,13 +143,14 @@ def test_overview(client_a, user_a, dataset):
     assert scores["grammar_avg"] == 3.25
     assert scores["fluency_avg"] == 3.25
     assert body["scores"]["previous_period"]["attempts"] == 1
-    user_a.refresh_from_db()
-    assert body["level"]["rating"] == user_a.level_rating
-    assert body["level"]["counted_attempts"] == 4
-    assert (
-        body["level"]["delta_period"] == user_a.level_rating - 1147
-    )  # first counted attempt moved 1150 -> 1147
-    assert body["level"]["next_band"]["label"] == "B1"
+    rating = LanguageProfile.all_users.get(user=user_a, language="en").level_rating
+    assert len(body["levels"]) == 1
+    level = body["levels"][0]
+    assert level["language"] == "en" and level["is_active"] is True
+    assert level["rating"] == rating
+    assert level["counted_attempts"] == 4
+    assert level["delta_period"] == rating - 1147  # first counted attempt moved 1150 -> 1147
+    assert level["next_band"]["label"] == "B1"
 
 
 @time_machine.travel(NOW, tick=False)
@@ -175,19 +177,22 @@ def test_scores_by_day_and_week(client_a, dataset):
 @time_machine.travel(NOW, tick=False)
 def test_level_series_and_probes(client_a, user_a, dataset):
     body = client_a.get("/api/v1/stats/level/").json()
-    assert body["points"][0] == {"date": "2026-08-18", "rating_after": 1147}
-    assert [p["date"] for p in body["points"][1:]] == ["2026-09-06", "2026-09-13", "2026-09-16"]
-    user_a.refresh_from_db()
-    assert body["points"][-1]["rating_after"] == user_a.level_rating == body["current"]["rating"]
-    assert body["probes"]["above"] == {
+    assert len(body["bands"]) == 6 and body["bands"][1]["label"] == "A2"
+    assert len(body["series"]) == 1
+    series = body["series"][0]
+    assert series["language"] == "en" and series["initial_rating"] == 1150
+    assert series["points"][0] == {"date": "2026-08-18", "rating_after": 1147}
+    assert [p["date"] for p in series["points"][1:]] == ["2026-09-06", "2026-09-13", "2026-09-16"]
+    rating = LanguageProfile.all_users.get(user=user_a, language="en").level_rating
+    assert series["points"][-1]["rating_after"] == rating == series["current"]["rating"]
+    assert series["probes"]["above"] == {
         "answered": 1,
         "hits": 1,
         "avg_actual": 0.85,
-        "avg_delta": body["probes"]["above"]["avg_delta"],
+        "avg_delta": series["probes"]["above"]["avg_delta"],
     }
-    assert body["probes"]["below"]["answered"] == 0
-    assert len(body["bands"]) == 6 and body["bands"][1]["label"] == "A2"
-    assert body["events"][0]["probe"] == "above" and body["events"][0]["hit"] is True
+    assert series["probes"]["below"]["answered"] == 0
+    assert series["events"][0]["probe"] == "above" and series["events"][0]["hit"] is True
 
 
 @time_machine.travel(NOW, tick=False)
@@ -213,7 +218,11 @@ def test_activity_forecast_collection(client_a, dataset):
         "job-interview": 2,
         "travel": 2,
     }
-    assert {row["level"]: row["count"] for row in collection["by_level"]}["A2"] == 2
+    assert [row["language"] for row in collection["by_level"]] == ["en"]
+    assert {row["level"]: row["count"] for row in collection["by_level"][0]["levels"]}["A2"] == 2
+    assert collection["by_language"] == [
+        {"language": "en", "total": 4, "new": 1, "learning": 3, "mature": 0, "suspended": 1}
+    ]
 
 
 @time_machine.travel(NOW, tick=False)
@@ -255,3 +264,108 @@ def test_stats_are_isolated(client_b, dataset):
     body = client_b.get("/api/v1/stats/overview/").json()
     assert body["collection"]["total"] == 1 and body["scores"]["period"]["attempts"] == 1
     assert client_b.get("/api/v1/stats/grammar-issues/").json()["total"] == 0
+
+
+# --- Language filter ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def french_dataset(dataset, user_a, make_profile, make_card, global_categories):
+    make_profile(user_a, "fr", starting_level="A1")
+    fr = make_card(
+        user_a,
+        global_categories["shopping"],
+        question="Racontez-moi votre dernière visite à l'épicerie.",
+        level="A1",
+        language="fr",
+        difficulty_rating=900,
+    )
+    answer(
+        user_a,
+        fr,
+        TODAY - dt.timedelta(days=1),
+        (4, 3, 4),
+        issues=[{"type": "agreement", "quote": "la magasin", "correction": "le magasin"}],
+    )
+    return {**dataset, "fr": fr}
+
+
+@time_machine.travel(NOW, tick=False)
+def test_language_filter_across_endpoints(client_a, user_a, french_dataset):
+    fr_rating = LanguageProfile.all_users.get(user=user_a, language="fr").level_rating
+    assert fr_rating != 900  # the French attempt moved the French rating...
+    en_rating = LanguageProfile.all_users.get(user=user_a, language="en").level_rating
+    assert (
+        en_rating
+        == client_a.get("/api/v1/stats/overview/?language=en").json()["levels"][0]["rating"]
+    )
+
+    overview = client_a.get("/api/v1/stats/overview/").json()
+    assert [lvl["language"] for lvl in overview["levels"]] == ["en", "fr"]
+    assert overview["scores"]["period"]["attempts"] == 5
+    assert overview["today"]["target"] == 6  # 3 (en default) + 3 (fr default), no session today
+    only_fr = client_a.get("/api/v1/stats/overview/?language=fr").json()
+    assert only_fr["scores"]["period"]["attempts"] == 1
+    assert only_fr["collection"] == {
+        "total": 1,
+        "new": 0,
+        "learning": 1,
+        "mature": 0,
+        "suspended": 0,
+    }
+    assert [lvl["language"] for lvl in only_fr["levels"]] == ["fr"]
+    assert (
+        only_fr["levels"][0]["initial_rating"] == 900
+        and only_fr["levels"][0]["counted_attempts"] == 1
+    )
+
+    level = client_a.get("/api/v1/stats/level/").json()
+    assert [s["language"] for s in level["series"]] == ["en", "fr"]
+    assert level["series"][1]["initial_rating"] == 900
+    assert level["series"][1]["points"][0] == {"date": "2026-08-18", "rating_after": 900}
+    assert len(client_a.get("/api/v1/stats/level/?language=fr").json()["series"]) == 1
+
+    scores = client_a.get("/api/v1/stats/scores/?bucket=day&language=fr").json()
+    assert len(scores) == 1 and scores[0]["bucket_start"] == "2026-09-15"
+
+    collection = client_a.get("/api/v1/stats/collection/").json()
+    assert [row["language"] for row in collection["by_level"]] == ["en", "fr"]
+    assert {r["level"]: r["count"] for r in collection["by_level"][1]["levels"]}["A1"] == 1
+    assert (
+        collection["by_language"][1]["language"] == "fr"
+        and collection["by_language"][1]["total"] == 1
+    )
+    fr_collection = client_a.get("/api/v1/stats/collection/?language=fr").json()
+    assert [row["language"] for row in fr_collection["by_level"]] == ["fr"]
+    assert fr_collection["by_maturity"]["learning"] == 1
+
+    issues = client_a.get("/api/v1/stats/grammar-issues/?language=fr").json()
+    assert issues["total"] == 1 and issues["items"][0]["type"] == "agreement"
+    assert client_a.get("/api/v1/stats/grammar-issues/").json()["total"] == 4
+
+    heat = client_a.get("/api/v1/stats/heatmap/?year=2026&language=fr").json()
+    assert {h["date"]: h["count"] for h in heat} == {"2026-09-15": 1}
+
+    cats = client_a.get("/api/v1/stats/categories/?language=fr").json()
+    assert [c["category"]["slug"] for c in cats] == ["shopping"]
+    # answered yesterday with interval 1 -> the French card is due today
+    assert client_a.get("/api/v1/stats/forecast/?days=7&language=fr").json()["total"] == 1
+    assert client_a.get("/api/v1/stats/forecast/?days=7&language=en").json()["total"] == 3
+    assert client_a.get("/api/v1/stats/activity/?language=fr").json()[0]["total"] == 1
+    assert (
+        client_a.get("/api/v1/stats/advanced/?language=fr").json()["answer_duration"]["attempts"]
+        == 1
+    )
+
+    assert client_a.get("/api/v1/stats/overview/?language=xx").status_code == 400
+
+
+@time_machine.travel(NOW, tick=False)
+def test_paused_language_is_hidden_unless_requested(client_a, user_a, french_dataset):
+    LanguageProfile.all_users.filter(user=user_a, language="fr").update(is_active=False)
+    overview = client_a.get("/api/v1/stats/overview/").json()
+    assert [lvl["language"] for lvl in overview["levels"]] == ["en"]
+    assert overview["today"]["target"] == 3
+    explicit = client_a.get("/api/v1/stats/overview/?language=fr").json()
+    assert explicit["levels"][0]["language"] == "fr" and explicit["levels"][0]["is_active"] is False
+    assert [s["language"] for s in client_a.get("/api/v1/stats/level/").json()["series"]] == ["en"]

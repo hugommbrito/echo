@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/cn'
@@ -9,12 +10,14 @@ export interface LevelBadgeProps {
   probe?: Probe | null
   /** Optional ELO rating, shown as "B1 · 1.240". */
   rating?: number | null
+  /** Leading slot, e.g. a `LanguageTag` ("EN · B1 · 1.240"). */
+  tag?: ReactNode
   size?: 'sm' | 'md'
   className?: string
 }
 
 /** "B1" (+ "sonda ↑ / ↓" when the card probes above/below the learner's level). */
-export function LevelBadge({ band, probe = 'none', rating, size = 'sm', className }: LevelBadgeProps) {
+export function LevelBadge({ band, probe = 'none', rating, tag, size = 'sm', className }: LevelBadgeProps) {
   const isProbe = probe === 'above' || probe === 'below'
   const probeText = probe === 'above' ? 'sonda ↑' : probe === 'below' ? 'sonda ↓' : null
   const ProbeIcon = probe === 'above' ? ArrowUp : ArrowDown
@@ -35,6 +38,14 @@ export function LevelBadge({ band, probe = 'none', rating, size = 'sm', classNam
           : `Nível ${band}`
       }
     >
+      {tag ? (
+        <>
+          {tag}
+          <span aria-hidden="true" className="opacity-50">
+            ·
+          </span>
+        </>
+      ) : null}
       <span>{band}</span>
       {rating !== undefined && rating !== null ? (
         <>

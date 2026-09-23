@@ -16,6 +16,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.models import LanguageProfile
 from apps.ai import services as ai_services
 from apps.ai.clients import get_prober
 from apps.ai.exceptions import AIError, AudioProbeError, TranscriptionError
@@ -130,6 +131,7 @@ def stage_transcribe(attempt: Attempt, path: Path) -> None:
             user=attempt.user,
             path=path,
             audio_seconds=float(attempt.audio_duration_seconds or 0),
+            language=attempt.card.language,
             related=attempt,
         )
     except TranscriptionError as exc:
@@ -238,20 +240,25 @@ def stage_schedule(attempt: Attempt) -> None:
         attempt.counts_for_scheduling = False
         attempt.save(update_fields=["counts_for_scheduling", "updated_at"])
         return
-    with transaction.atomic():
-        apply_review(
-            card=attempt.card,
-            attempt=attempt,
-            composite=evaluation.composite_score,
-            quality=evaluation.sm2_quality,
-            reviewed_on=attempt.attempted_on,
-        )
-        apply_level_result(
-            user=attempt.user,
-            card=attempt.card,
-            attempt=attempt,
-            composite=evaluation.composite_score,
-            logged_on=attempt.attempted_on,
-        )
-        attempt.counts_for_scheduling = True
-        attempt.save(update_fields=["counts_for_scheduling", "updated_at"])
+    try:
+        with transaction.atomic():
+            apply_review(
+                card=attempt.card,
+                attempt=attempt,
+                composite=evaluation.composite_score,
+                quality=evaluation.sm2_quality,
+                reviewed_on=attempt.attempted_on,
+            )
+            apply_level_result(
+                user=attempt.user,
+                card=attempt.card,
+                attempt=attempt,
+                composite=evaluation.composite_score,
+                logged_on=attempt.attempted_on,
+            )
+            attempt.counts_for_scheduling = True
+            attempt.save(update_fields=["counts_for_scheduling", "updated_at"])
+    except LanguageProfile.DoesNotExist as exc:
+        raise StageError(
+            "scheduling", f"No language profile for {attempt.card.language!r}."
+        ) from exc

@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import { useMe } from '@/api/auth'
 import { useCards } from '@/api/cards'
 import { useCategories } from '@/api/categories'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { LanguageTag } from '@/components/ui/LanguageTag'
 import { LevelBadge } from '@/components/ui/LevelBadge'
 import { MaturityBadge } from '@/components/ui/MaturityBadge'
 import { Select } from '@/components/ui/select'
@@ -17,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MATURITY_LABELS } from '@/lib/colors'
 import { formatNumber, plural } from '@/lib/format'
 import { CARD_STATUS_LABELS } from '@/lib/labels'
+import { languageMeta, sortByLanguage } from '@/lib/languages'
 import { CEFR_BANDS } from '@/lib/levels'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import type { CardFilters, CardStatus, Maturity } from '@/types/api'
@@ -26,9 +29,12 @@ const PAGE_SIZE = 30
 export function CardsPage() {
   const [params, setParams] = useSearchParams()
   const categories = useCategories()
+  const me = useMe()
+  const languages = sortByLanguage(me.data?.languages ?? [], (p) => p.code)
 
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1)
   const filters: CardFilters = {
+    language: (params.get('language') ?? '') as CardFilters['language'],
     category: params.get('category') ?? '',
     maturity: (params.get('maturity') ?? '') as CardFilters['maturity'],
     level: (params.get('level') ?? '') as CardFilters['level'],
@@ -94,7 +100,7 @@ export function CardsPage() {
       </header>
 
       <Card className="p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <div className="space-y-1 lg:col-span-1 sm:col-span-2">
             <Label htmlFor="cards-search">Buscar</Label>
             <div className="relative">
@@ -111,6 +117,22 @@ export function CardsPage() {
                 className="pl-9"
               />
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="filter-language">Idioma</Label>
+            <Select
+              id="filter-language"
+              value={filters.language ?? ''}
+              onChange={(e) => setFilter('language', e.target.value)}
+            >
+              <option value="">Todos</option>
+              {languages.map((profile) => (
+                <option key={profile.code} value={profile.code}>
+                  {languageMeta(profile.code).label}
+                  {profile.is_active ? '' : ' (pausado)'}
+                </option>
+              ))}
+            </Select>
           </div>
           <div className="space-y-1">
             <Label htmlFor="filter-category">Categoria</Label>
@@ -198,8 +220,11 @@ export function CardsPage() {
                 to={`/cards/${card.id}`}
                 className="block rounded-2xl border border-border bg-surface p-4 transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <p className="font-medium leading-snug">{card.question_text}</p>
+                <p className="font-medium leading-snug" lang={languageMeta(card.language).htmlLang}>
+                  {card.question_text}
+                </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+                  <LanguageTag code={card.language} />
                   <Badge variant="outline">{card.category.name}</Badge>
                   <LevelBadge band={card.cefr_level} probe={card.probe} />
                   <MaturityBadge maturity={card.maturity} />

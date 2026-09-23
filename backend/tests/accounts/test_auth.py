@@ -1,5 +1,7 @@
 import pytest
 
+from apps.accounts.models import LanguageProfile
+
 pytestmark = pytest.mark.django_db
 
 
@@ -23,7 +25,12 @@ def test_login_logout_flow(api_client, user_a):
     assert ok.status_code == 200, ok.content
     body = ok.json()
     assert body["email"] == "ana@example.com"
-    assert body["level"] == {
+    assert "level" not in body and "default_new_cards_per_day" not in body
+    assert len(body["languages"]) == 1
+    profile = body["languages"][0]
+    assert profile["code"] == "en" and profile["name"] == "Inglês" and profile["is_active"] is True
+    assert profile["default_new_cards_per_day"] == 3 and profile["activated_at"]
+    assert profile["level"] == {
         "rating": 1150,
         "band": "A2",
         "provisional": True,
@@ -46,7 +53,8 @@ def test_patch_me_preferences(client_a):
     body = response.json()
     assert body["timezone"] == "America/Toronto"
     assert body["feedback_language"] == "en"
-    assert body["default_new_cards_per_day"] == 5
+    # the daily target now lives on the language profile; the legacy key is ignored
+    assert body["languages"][0]["default_new_cards_per_day"] == 3
 
 
 def test_patch_me_rejects_invalid_values_and_readonly_fields(client_a, user_a):
@@ -54,21 +62,19 @@ def test_patch_me_rejects_invalid_values_and_readonly_fields(client_a, user_a):
     assert bad_tz.status_code == 400
     assert bad_tz.json()["errors"]["timezone"]
 
-    too_many = client_a.patch("/api/v1/me/", {"default_new_cards_per_day": 999}, format="json")
-    assert too_many.status_code == 400
-
     ignored = client_a.patch(
         "/api/v1/me/",
-        {"email": "new@example.com", "is_staff": True, "level": {"rating": 2000}},
+        {
+            "email": "new@example.com",
+            "is_staff": True,
+            "languages": [{"code": "en", "level": {"rating": 2000}}],
+        },
         format="json",
     )
     assert ignored.status_code == 200
     user_a.refresh_from_db()
-    assert (
-        user_a.email == "ana@example.com"
-        and user_a.is_staff is False
-        and user_a.level_rating == 1150
-    )
+    assert user_a.email == "ana@example.com" and user_a.is_staff is False
+    assert LanguageProfile.all_users.get(user=user_a, language="en").level_rating == 1150
 
 
 def test_healthcheck(api_client):

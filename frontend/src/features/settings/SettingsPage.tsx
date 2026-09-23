@@ -1,5 +1,6 @@
 import { Pencil, Plus } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { useMe, useUpdateMe } from '@/api/auth'
 import { slugify, useCategories, useCreateCategory, useUpdateCategory } from '@/api/categories'
@@ -18,6 +19,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { plural } from '@/lib/format'
 import type { Category, FeedbackLanguage, User } from '@/types/api'
+
+import { LanguagesTab } from './LanguagesTab'
+
+const TABS = ['preferences', 'languages', 'categories'] as const
+type Tab = (typeof TABS)[number]
+
+function isTab(value: string | null): value is Tab {
+  return value !== null && (TABS as readonly string[]).includes(value)
+}
 
 const COMMON_TIMEZONES = [
   'America/Sao_Paulo',
@@ -49,7 +59,20 @@ const COMMON_TIMEZONES = [
 
 export function SettingsPage() {
   const me = useMe()
-  const [tab, setTab] = useState('preferences')
+  const [params, setParams] = useSearchParams()
+  const requested = params.get('tab')
+  const tab: Tab = isTab(requested) ? requested : 'preferences'
+  const setTab = (value: string) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (value === 'preferences') next.delete('tab')
+        else next.set('tab', value)
+        return next
+      },
+      { replace: true },
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -61,17 +84,18 @@ export function SettingsPage() {
       <Tabs value={tab} onValueChange={setTab} id="settings">
         <TabsList>
           <TabsTrigger value="preferences">Preferências</TabsTrigger>
+          <TabsTrigger value="languages">Idiomas</TabsTrigger>
           <TabsTrigger value="categories">Categorias</TabsTrigger>
         </TabsList>
         <TabsContent value="preferences">
           {me.data ? (
-            <PreferencesForm
-              key={`${me.data.timezone}|${me.data.feedback_language}|${me.data.default_new_cards_per_day}`}
-              me={me.data}
-            />
+            <PreferencesForm key={`${me.data.timezone}|${me.data.feedback_language}`} me={me.data} />
           ) : (
             <Skeleton className="h-64 w-full" />
           )}
+        </TabsContent>
+        <TabsContent value="languages">
+          <LanguagesTab />
         </TabsContent>
         <TabsContent value="categories">
           <CategoriesSection />
@@ -87,17 +111,15 @@ function PreferencesForm({ me }: { me: User }) {
   const update = useUpdateMe()
   const [timezone, setTimezone] = useState(me.timezone)
   const [language, setLanguage] = useState<FeedbackLanguage>(me.feedback_language)
-  const [target, setTarget] = useState(me.default_new_cards_per_day)
   const [saved, setSaved] = useState(false)
 
-  const dirty =
-    timezone !== me.timezone || language !== me.feedback_language || target !== me.default_new_cards_per_day
+  const dirty = timezone !== me.timezone || language !== me.feedback_language
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSaved(false)
     update.mutate(
-      { timezone: timezone.trim(), feedback_language: language, default_new_cards_per_day: target },
+      { timezone: timezone.trim(), feedback_language: language },
       { onSuccess: () => setSaved(true) },
     )
   }
@@ -107,7 +129,8 @@ function PreferencesForm({ me }: { me: User }) {
       <CardHeader>
         <CardTitle>Preferências</CardTitle>
         <CardDescription>
-          Fuso horário define o "dia" das sessões; o idioma vale para o feedback da avaliação.
+          Fuso horário define o "dia" das sessões; o idioma do feedback vale para todas as línguas que você
+          pratica. As perguntas novas por dia ficam na aba Idiomas.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -148,21 +171,6 @@ function PreferencesForm({ me }: { me: User }) {
                 <option value="pt-BR">Português (Brasil)</option>
                 <option value="en">English</option>
               </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="default-target">Perguntas novas por dia</Label>
-              <Input
-                id="default-target"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={20}
-                value={target}
-                onChange={(e) => setTarget(Math.max(0, Math.min(20, Number(e.target.value) || 0)))}
-              />
-              {isApiError(update.error) && update.error.fieldError('default_new_cards_per_day') ? (
-                <p className="text-xs text-danger">{update.error.fieldError('default_new_cards_per_day')}</p>
-              ) : null}
             </div>
           </div>
 

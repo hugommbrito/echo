@@ -49,7 +49,7 @@ export function LoginPage() {
             <span className="size-3 rounded-full bg-primary-fg" />
           </span>
           <CardTitle className="text-display text-3xl">Echo</CardTitle>
-          <CardDescription>Pratique inglês falado todos os dias.</CardDescription>
+          <CardDescription>Pratique conversação em outro idioma todos os dias.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>

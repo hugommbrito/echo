@@ -10,12 +10,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { ChartCard, TooltipFrame } from './ChartCard'
+import { languageMeta, sortByLanguage } from '@/lib/languages'
+import { ChartCard, LegendRow, TooltipFrame } from './ChartCard'
 import { fmtDay, fmtInt, fmtSigned } from './format'
-import type { LevelStats } from './types'
-import type { ChartColors } from './useChartColors'
+import { endLabel } from './shapes'
+import type { LevelEvent, LevelSeries, LevelStats } from './types'
+import { languageColor, type ChartColors } from './useChartColors'
 
-type Point = { date: string; rating: number; delta?: number; probe?: 'above' | 'below'; hit?: boolean }
+/** One row per date; one rating column per language (`en`, `fr`, …). */
+type Row = { date: string } & Record<string, number | string | undefined>
 
 function ProbeMarker({
   cx,
@@ -42,16 +45,38 @@ function ProbeMarker({
   )
 }
 
-function LevelTooltip({ active, payload }: { active?: boolean; payload?: { payload: Point }[] }) {
+function LevelTooltip({
+  active,
+  payload,
+  series,
+  eventsByDate,
+  colors,
+}: {
+  active?: boolean
+  payload?: { payload: Row }[]
+  series: LevelSeries[]
+  eventsByDate: Map<string, (LevelEvent & { language: string })[]>
+  colors: ChartColors
+}) {
   if (!active || !payload?.length) return null
-  const p = payload[0].payload
-  const rows = [{ label: 'rating', value: fmtInt(p.rating) }]
-  if (p.probe)
+  const row = payload[0].payload
+  const rows = series
+    .filter((s) => row[s.language] != null)
+    .map((s) => ({
+      label: series.length > 1 ? languageMeta(s.language).label.toLowerCase() : 'rating',
+      value: fmtInt(Number(row[s.language])),
+      color: series.length > 1 ? languageColor(colors, s.language) : undefined,
+    }))
+  for (const event of eventsByDate.get(row.date) ?? []) {
     rows.push({
-      label: `sonda ${p.probe === 'above' ? 'acima' : 'abaixo'} · ${p.hit ? 'acertou' : 'errou'}`,
-      value: fmtSigned(p.delta),
+      label: `sonda ${event.probe === 'above' ? 'acima' : 'abaixo'} · ${event.hit ? 'acertou' : 'errou'}${
+        series.length > 1 ? ` · ${languageMeta(event.language).label.toLowerCase()}` : ''
+      }`,
+      value: fmtSigned(event.delta),
+      color: undefined,
     })
-  return <TooltipFrame title={fmtDay(p.date, 'EEE, d MMM')} rows={rows} />
+  }
+  return <TooltipFrame title={fmtDay(row.date, 'EEE, d MMM')} rows={rows} />
 }
 
 export function LevelTrend({
@@ -63,60 +88,115 @@ export function LevelTrend({
   colors: ChartColors
   loading?: boolean
 }) {
-  const data = useMemo<Point[]>(
-    () => stats.points.map((p) => ({ date: p.date, rating: p.rating_after })),
-    [stats],
-  )
-  const ratings = data.map((d) => d.rating)
-  const lo = Math.min(...ratings, stats.initial_rating)
-  const hi = Math.max(...ratings, stats.current.rating)
+  const series = useMemo(() => sortByLanguage(stats.series, (s) => s.language), [stats])
+
+  const data = useMemo<Row[]>(() => {
+    const byDate = new Map<string, Row>()
+    for (const s of series) {
+      for (const p of s.points) {
+        const row = byDate.get(p.date) ?? { date: p.date }
+        row[s.language] = p.rating_after
+        byDate.set(p.date, row)
+      }
+    }
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+  }, [series])
+
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, (LevelEvent & { language: string })[]>()
+    for (const s of series) {
+      for (const e of s.events) {
+        const list = map.get(e.date) ?? []
+        list.push({ ...e, language: s.language })
+        map.set(e.date, list)
+      }
+    }
+    return map
+  }, [series])
+
+  const ratings = series.flatMap((s) => [
+    ...s.points.map((p) => p.rating_after),
+    s.initial_rating,
+    s.current.rating,
+  ])
+  const lo = ratings.length ? Math.min(...ratings) : 1000
+  const hi = ratings.length ? Math.max(...ratings) : 1200
   const visibleBands = stats.bands.filter((b) => b.max >= lo - 100 && b.min <= hi + 100)
   const domain: [number, number] = [
     Math.max(600, Math.min(...visibleBands.map((b) => b.min))),
     Math.min(2200, Math.max(...visibleBands.map((b) => Math.min(b.max, 2200)))),
   ]
-  const events = stats.events.map((e) => ({ ...e, key: `${e.date}-${e.rating_after}-${e.delta}` }))
-  const above = stats.probes.above
-  const below = stats.probes.below
+  const lastIndex = data.length - 1
+  const multi = series.length > 1
+  const single = series.length === 1 ? series[0] : null
 
   return (
     <ChartCard
       title="Evolução do nível"
-      subtitle="Rating ao fim de cada dia; faixas = níveis CEFR; ▲ sonda acertada · ▼ sonda errada"
+      subtitle={`${single ? `${languageMeta(single.language).label} · ` : ''}rating ao fim de cada dia; faixas = níveis CEFR; ▲ sonda acertada · ▼ sonda errada`}
       loading={loading}
+      empty={series.length === 0}
+      emptyText="Nenhum idioma ativo."
       table={{
-        columns: ['Dia', 'Rating'],
-        rows: stats.points.map((p) => [fmtDay(p.date, 'dd/MM/yyyy'), p.rating_after]),
+        columns: ['Dia', ...series.map((s) => languageMeta(s.language).label)],
+        rows: data.map((row) => [
+          fmtDay(row.date, 'dd/MM/yyyy'),
+          ...series.map((s) => (row[s.language] == null ? '–' : Number(row[s.language]))),
+        ]),
       }}
       footer={
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          <span>
-            sondas acima:{' '}
-            <strong className="text-fg">
-              {above.hits}/{above.answered}
-            </strong>{' '}
-            acertos
-          </span>
-          <span>
-            sondas abaixo:{' '}
-            <strong className="text-fg">
-              {below.hits}/{below.answered}
-            </strong>{' '}
-            acertos
-          </span>
-          <span>
-            início do período: <strong className="text-fg">{fmtInt(stats.points[0]?.rating_after)}</strong> ·
-            agora:{' '}
-            <strong className="text-fg">
-              {fmtInt(stats.current.rating)} · {stats.current.band}
-            </strong>
-          </span>
+        <div className="space-y-1">
+          {series.map((s) => (
+            <div key={s.language} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {multi ? (
+                <span className="inline-flex items-center gap-1.5 font-medium text-fg">
+                  <span
+                    aria-hidden
+                    className="inline-block size-2 rounded-full"
+                    style={{ background: languageColor(colors, s.language) }}
+                  />
+                  {languageMeta(s.language).label}
+                </span>
+              ) : null}
+              <span>
+                sondas acima:{' '}
+                <strong className="text-fg">
+                  {s.probes.above.hits}/{s.probes.above.answered}
+                </strong>{' '}
+                acertos
+              </span>
+              <span>
+                sondas abaixo:{' '}
+                <strong className="text-fg">
+                  {s.probes.below.hits}/{s.probes.below.answered}
+                </strong>{' '}
+                acertos
+              </span>
+              <span>
+                início do período: <strong className="text-fg">{fmtInt(s.points[0]?.rating_after)}</strong> ·
+                agora:{' '}
+                <strong className="text-fg">
+                  {fmtInt(s.current.rating)} · {s.current.band}
+                </strong>
+              </span>
+            </div>
+          ))}
         </div>
       }
     >
+      {multi ? (
+        <LegendRow
+          shape="line"
+          items={series.map((s) => ({
+            key: s.language,
+            label: languageMeta(s.language).label,
+            color: languageColor(colors, s.language),
+          }))}
+        />
+      ) : null}
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 36, bottom: 0, left: 0 }}>
+          <LineChart data={data} margin={{ top: 8, right: 56, bottom: 0, left: 0 }}>
             {visibleBands.map((b, i) => (
               <ReferenceArea
                 key={b.label}
@@ -146,29 +226,47 @@ export function LevelTrend({
               axisLine={false}
               tickFormatter={(v: number) => fmtInt(v)}
             />
-            <Tooltip content={<LevelTooltip />} cursor={{ stroke: colors.axis, strokeWidth: 1 }} />
-            <Line
-              type="monotone"
-              dataKey="rating"
-              stroke={colors.ink}
-              strokeWidth={2}
-              dot={{ r: 3, fill: colors.ink, stroke: colors.surface, strokeWidth: 2 }}
-              activeDot={{ r: 5, stroke: colors.surface, strokeWidth: 2 }}
-              isAnimationActive={false}
+            <Tooltip
+              content={<LevelTooltip series={series} eventsByDate={eventsByDate} colors={colors} />}
+              cursor={{ stroke: colors.axis, strokeWidth: 1 }}
             />
-            {events.map((e) => (
-              <ReferenceDot
-                key={e.key}
-                x={e.date}
-                y={e.rating_after}
-                r={8}
-                shape={(props: { cx?: number; cy?: number }) => (
-                  <ProbeMarker cx={props.cx} cy={props.cy} hit={e.hit} colors={colors} />
-                )}
-                ifOverflow="extendDomain"
-                zIndex={1000}
-              />
-            ))}
+            {series.map((s) => {
+              const color = languageColor(colors, s.language)
+              const short = languageMeta(s.language).short
+              return (
+                <Line
+                  key={s.language}
+                  type="monotone"
+                  dataKey={s.language}
+                  stroke={color}
+                  strokeWidth={2}
+                  connectNulls
+                  dot={{ r: 3, fill: color, stroke: colors.surface, strokeWidth: 2 }}
+                  activeDot={{ r: 5, stroke: colors.surface, strokeWidth: 2 }}
+                  isAnimationActive={false}
+                  label={
+                    multi
+                      ? endLabel(lastIndex, (value) => `${short} ${fmtInt(value)}`, colors.ink)
+                      : undefined
+                  }
+                />
+              )
+            })}
+            {series.flatMap((s) =>
+              s.events.map((e) => (
+                <ReferenceDot
+                  key={`${s.language}-${e.date}-${e.rating_after}-${e.delta}`}
+                  x={e.date}
+                  y={e.rating_after}
+                  r={8}
+                  shape={(props: { cx?: number; cy?: number }) => (
+                    <ProbeMarker cx={props.cx} cy={props.cy} hit={e.hit} colors={colors} />
+                  )}
+                  ifOverflow="extendDomain"
+                  zIndex={1000}
+                />
+              )),
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>

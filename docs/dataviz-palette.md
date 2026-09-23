@@ -23,10 +23,26 @@ Escuro: todos PASS (CVD 9,4 · normal 20,9 · contraste ≥ 3:1).
 `--ordinal`: monotonia, ΔL ≥ 0,06 e extremo claro ≥ 2:1 — PASS nos dois modos (extremo 2,41:1 claro, 2,62:1 escuro).
 Sequencial do calendário (respostas/dia): rampa violeta `#c9c3f3 → #a49ce8 → #7466d2 → #4a3aa7` sobre a faixa de fundo.
 
+## Idiomas (categórico, slots 4 e 5) — mesma cor no app inteiro
+| Idioma | Claro | Escuro |
+|---|---|---|
+| Inglês (`en`) | `#eda100` (âmbar) | `#c98500` |
+| Francês (`fr`) | `#e87ba4` (magenta) | `#d55181` |
+
+Validados contra as superfícies reais (`#fffdfa` claro, `#1f1b16` escuro): claro PASS em CVD (ΔE 16,3) e
+visão normal (19,6), **WARN** de contraste (2,1–2,7:1) → mesma obrigação dos eixos (legenda + rótulo direto
+no fim da linha + "Ver tabela"); escuro tudo PASS. Rejeitados: verde (ΔE 10 do ▲ de sonda acertada),
+vermelho (colide com `--status-critical`), violeta (maturidade). **Regra**: séries de eixo e séries de idioma
+nunca dividem um gráfico — o seletor de idioma *filtra* os gráficos de eixo, nunca acrescenta séries. Um
+terceiro idioma não ganha o slot 6 (verde): o gráfico de nível passa a facetar. Tokens `--language-en` /
+`--language-fr` em `frontend/src/index.css`.
+
 ## Nível
-Linha do rating em tinta primária (`#0b0b0b` / `#ffffff`) sobre faixas CEFR alternadas
-(`--chart-band` `#f3f2ee` / superfície). Sondas usam **status**, com ícone + rótulo:
-acerto ▲ `#006300` (claro) / `#0ca30c` (escuro); erro ▼ `#d03b3b`.
+Uma linha por idioma **na cor do idioma** (um idioma só continua na cor dele; a legenda só aparece com
+≥ 2 séries e o subtítulo nomeia o idioma) sobre faixas CEFR alternadas (`--chart-band` `#f3f2ee` /
+superfície). Sondas usam **status**, com ícone + rótulo, sobre a própria linha:
+acerto ▲ `#006300` (claro) / `#0ca30c` (escuro); erro ▼ `#d03b3b`. Coleção "Por nível CEFR": mini-barras
+agrupadas lado a lado por idioma (distribuições independentes; nunca empilhadas).
 
 ## Tinta e cromo
 | Papel | Claro | Escuro |

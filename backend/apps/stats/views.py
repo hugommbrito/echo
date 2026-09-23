@@ -4,6 +4,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.languages import is_known_language, language_codes
 from apps.stats import queries
 
 PERIOD_PARAMS = [
@@ -15,6 +16,10 @@ PERIOD_PARAMS = [
     ),
     OpenApiParameter("category", str, description="Category id or slug"),
 ]
+LANGUAGE_PARAM = OpenApiParameter(
+    "language", str, enum=language_codes(), description="One practised language (default: all)"
+)
+PERIOD_PARAMS.append(LANGUAGE_PARAM)
 
 
 class StatsView(APIView):
@@ -37,6 +42,12 @@ class StatsView(APIView):
             raise ValidationError({"category": ["Unknown category."]}, code="unknown_category")
         return category
 
+    def language(self) -> str | None:
+        raw = self.request.query_params.get("language") or None
+        if raw is not None and not is_known_language(raw):
+            raise ValidationError({"language": ["Unknown language."]}, code="unknown_language")
+        return raw
+
     def bucket(self) -> str:
         bucket = self.request.query_params.get("bucket", "day")
         if bucket not in {"day", "week"}:
@@ -57,7 +68,9 @@ class StatsView(APIView):
 @extend_schema(parameters=PERIOD_PARAMS, responses=OpenApiTypes.OBJECT)
 class OverviewView(StatsView):
     def get(self, request):
-        return Response(queries.overview(request.user, self.period(), self.category()))
+        return Response(
+            queries.overview(request.user, self.period(), self.category(), self.language())
+        )
 
 
 @extend_schema(
@@ -66,13 +79,15 @@ class OverviewView(StatsView):
 )
 class ScoresView(StatsView):
     def get(self, request):
-        return Response(queries.scores(self.period(), self.category(), self.bucket()))
+        return Response(
+            queries.scores(self.period(), self.category(), self.bucket(), self.language())
+        )
 
 
 @extend_schema(parameters=PERIOD_PARAMS, responses=OpenApiTypes.OBJECT)
 class LevelView(StatsView):
     def get(self, request):
-        return Response(queries.level(request.user, self.period()))
+        return Response(queries.level(request.user, self.period(), self.language()))
 
 
 @extend_schema(
@@ -81,44 +96,50 @@ class LevelView(StatsView):
 )
 class ActivityView(StatsView):
     def get(self, request):
-        return Response(queries.activity(self.period(), self.category(), self.bucket()))
+        return Response(
+            queries.activity(self.period(), self.category(), self.bucket(), self.language())
+        )
 
 
-@extend_schema(parameters=[OpenApiParameter("days", int)], responses=OpenApiTypes.OBJECT)
+@extend_schema(
+    parameters=[OpenApiParameter("days", int), LANGUAGE_PARAM], responses=OpenApiTypes.OBJECT
+)
 class ForecastView(StatsView):
     def get(self, request):
-        return Response(queries.forecast(request.user, self.int_param("days", 30, 1, 365)))
+        return Response(
+            queries.forecast(request.user, self.int_param("days", 30, 1, 365), self.language())
+        )
 
 
-@extend_schema(responses=OpenApiTypes.OBJECT)
+@extend_schema(parameters=[LANGUAGE_PARAM], responses=OpenApiTypes.OBJECT)
 class CollectionView(StatsView):
     def get(self, request):
-        return Response(queries.collection(request.user))
+        return Response(queries.collection(request.user, self.language()))
 
 
 @extend_schema(parameters=PERIOD_PARAMS, responses=OpenApiTypes.OBJECT)
 class GrammarIssuesView(StatsView):
     def get(self, request):
-        return Response(queries.grammar_issues(self.period(), self.category()))
+        return Response(queries.grammar_issues(self.period(), self.category(), self.language()))
 
 
 @extend_schema(parameters=PERIOD_PARAMS, responses=OpenApiTypes.OBJECT)
 class CategoriesView(StatsView):
     def get(self, request):
-        return Response(queries.categories(request.user, self.period()))
+        return Response(queries.categories(request.user, self.period(), self.language()))
 
 
 @extend_schema(
-    parameters=[OpenApiParameter("year", int), OpenApiParameter("category", str)],
+    parameters=[OpenApiParameter("year", int), OpenApiParameter("category", str), LANGUAGE_PARAM],
     responses=OpenApiTypes.OBJECT,
 )
 class HeatmapView(StatsView):
     def get(self, request):
         year = self.int_param("year", request.user.local_today().year, 2000, 2100)
-        return Response(queries.heatmap(request.user, year, self.category()))
+        return Response(queries.heatmap(request.user, year, self.category(), self.language()))
 
 
-@extend_schema(responses=OpenApiTypes.OBJECT)
+@extend_schema(parameters=[LANGUAGE_PARAM], responses=OpenApiTypes.OBJECT)
 class AdvancedView(StatsView):
     def get(self, request):
-        return Response(queries.advanced(request.user))
+        return Response(queries.advanced(request.user, self.language()))

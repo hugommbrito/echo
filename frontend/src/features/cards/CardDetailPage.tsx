@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LanguageTag } from '@/components/ui/LanguageTag'
 import { LevelBadge } from '@/components/ui/LevelBadge'
 import { MaturityBadge } from '@/components/ui/MaturityBadge'
 import { ScorePill } from '@/components/ui/ScorePill'
@@ -14,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AttemptHistory } from '@/features/practice/AttemptHistory'
 import { formatDateShort, formatDecimal, formatNumber, formatRelativeDays, pluralDays } from '@/lib/format'
 import { CARD_STATUS_LABELS } from '@/lib/labels'
+import { languageMeta } from '@/lib/languages'
 import { probeDescription } from '@/lib/levels'
 import type { CardDetail } from '@/types/api'
 
@@ -51,6 +53,7 @@ export function CardDetailPage() {
   const suspended = data.status === 'suspended'
   const toggling = suspend.isPending || unsuspend.isPending
   const toggleError = suspend.error ?? unsuspend.error
+  const lang = languageMeta(data.language).htmlLang
 
   return (
     <div className="space-y-6">
@@ -60,6 +63,7 @@ export function CardDetailPage() {
 
       <header className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
+          <LanguageTag code={data.language} />
           <Badge variant="outline">
             {data.category.name}
             {data.category.scope === 'personal' ? <span className="text-level-accent">· pessoal</span> : null}
@@ -70,8 +74,14 @@ export function CardDetailPage() {
             <Badge variant="warning">{CARD_STATUS_LABELS[data.status]}</Badge>
           ) : null}
         </div>
-        {data.scenario ? <p className="italic text-fg-muted">{data.scenario}</p> : null}
-        <h1 className="text-display text-2xl leading-snug sm:text-3xl">{data.question_text}</h1>
+        {data.scenario ? (
+          <p className="italic text-fg-muted" lang={lang}>
+            {data.scenario}
+          </p>
+        ) : null}
+        <h1 className="text-display text-2xl leading-snug sm:text-3xl" lang={lang}>
+          {data.question_text}
+        </h1>
         {data.probe !== 'none' ? (
           <p className="text-xs text-fg-muted">{probeDescription(data.probe)}</p>
         ) : null}
@@ -87,7 +97,7 @@ export function CardDetailPage() {
                 <CardTitle className="text-base">O que uma resposta completa costuma cobrir</CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="list-disc space-y-1 pl-5 text-sm">
+                <ul className="list-disc space-y-1 pl-5 text-sm" lang="en">
                   {data.key_points.map((point, i) => (
                     <li key={i}>{point}</li>
                   ))}

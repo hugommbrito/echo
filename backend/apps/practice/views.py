@@ -7,6 +7,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.accounts.scoping import OwnedQuerySetMixin
+from apps.core.languages import is_known_language, language_codes
 from apps.practice import attempts as attempt_services
 from apps.practice import queue, services
 from apps.practice.improved_answer import get_or_generate_improved_answer
@@ -34,7 +35,9 @@ class SessionViewSet(
     serializer_class = DailySessionSerializer
 
     def get_base_queryset(self):
-        return DailySession.objects.prefetch_related("categories").order_by("-session_date")
+        return DailySession.objects.prefetch_related("categories", "plans").order_by(
+            "-session_date"
+        )
 
     @extend_schema(parameters=[OpenApiParameter("from", str), OpenApiParameter("to", str)])
     def list(self, request, *args, **kwargs):
@@ -60,15 +63,12 @@ class SessionViewSet(
         serializer = SessionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        targets = services.resolve_targets(request.user, data["new_cards_targets"])
         projection = services.project_session(
-            request.user,
-            new_cards_target=data["new_cards_target"],
-            categories=data["category_ids"],
+            request.user, targets=targets, categories=data["category_ids"]
         )
         session = services.create_session(
-            request.user,
-            category_ids=data["category_ids"],
-            new_cards_target=data["new_cards_target"],
+            request.user, category_ids=data["category_ids"], new_cards_targets=targets
         )
         body = DailySessionSerializer(
             session, context={"request": request, "projection": projection}
@@ -86,34 +86,41 @@ class SessionViewSet(
 
     @extend_schema(
         parameters=[
-            OpenApiParameter("new_cards_target", int, required=True),
+            OpenApiParameter(
+                "targets",
+                str,
+                description="New cards per language as lang:count pairs, e.g. en:3,fr:2 "
+                "(default: each active language's daily default)",
+            ),
             OpenApiParameter("category_ids", str, description="Comma-separated category ids"),
         ],
         responses=ProjectionSerializer,
     )
     @action(detail=False, methods=["get"])
     def projection(self, request):
-        raw_target = request.query_params.get(
-            "new_cards_target", request.user.default_new_cards_per_day
-        )
-        try:
-            target = max(0, int(raw_target))
-        except (TypeError, ValueError):
-            raise ValidationError({"new_cards_target": ["Must be an integer."]})
+        raw_targets = services.parse_targets_param(request.query_params.get("targets"))
+        if raw_targets is None:
+            raw_targets = services.default_targets(request.user)
+        targets = services.resolve_targets(request.user, raw_targets) if raw_targets else {}
         raw_ids = [i for i in request.query_params.get("category_ids", "").split(",") if i]
         categories = services.resolve_categories(request.user, raw_ids) if raw_ids else []
-        projection = services.project_session(
-            request.user, new_cards_target=target, categories=categories
-        )
+        projection = services.project_session(request.user, targets=targets, categories=categories)
         return Response(ProjectionSerializer(projection.as_dict()).data)
 
     @extend_schema(
-        parameters=[OpenApiParameter("limit", int)], responses=QueueItemSerializer(many=True)
+        parameters=[
+            OpenApiParameter("limit", int),
+            OpenApiParameter("language", str, enum=language_codes()),
+        ],
+        responses=QueueItemSerializer(many=True),
     )
     @action(detail=True, methods=["get"])
     def queue(self, request, pk=None):
         session = services.refresh_status(self.get_object())
-        items = queue.build_queue(session)
+        language = request.query_params.get("language") or None
+        if language is not None and not is_known_language(language):
+            raise ValidationError({"language": ["Unknown language."]}, code="unknown_language")
+        items = queue.build_queue(session, language)
         if limit := request.query_params.get("limit"):
             try:
                 items = items[: max(0, int(limit))]

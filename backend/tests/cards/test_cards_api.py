@@ -24,9 +24,20 @@ def test_list_and_filters(client_a, user_a, make_card, global_categories):
         status="suspended",
     )
 
+    make_card(
+        user_a,
+        global_categories["shopping"],
+        question="Racontez-moi la dernière fois que vous avez magasiné.",
+        level="A1",
+        language="fr",
+    )
+
     body = client_a.get("/api/v1/cards/").json()
-    assert body["count"] == 3
+    assert body["count"] == 4
     assert {c["maturity"] for c in body["results"]} == {"new", "learning"}
+    assert {c["language"] for c in body["results"]} == {"en", "fr"}
+    assert client_a.get("/api/v1/cards/?language=fr").json()["count"] == 1
+    assert client_a.get("/api/v1/cards/?language=en").json()["count"] == 3
 
     assert client_a.get("/api/v1/cards/?category=job-interview").json()["count"] == 2
     assert client_a.get("/api/v1/cards/?maturity=learning").json()["count"] == 1

@@ -36,27 +36,107 @@ _TRANSCRIPT_RE = re.compile(r'"""\n(.*?)\n"""', re.S)
 _WORDS_RE = re.compile(r"\((\d+) s, (\d+) words, (\d+) words per minute\)")
 
 QUESTION_BANK = {
-    "A1": "What do you usually do on a {day}? Tell me about it.",
-    "A2": "Tell me about the last time you {past}. What happened?",
-    "B1": "Why do you think {topic} matters, and can you give me an example from your life?",
-    "B2": (
-        "Describe a time you had to {hard}. How did you handle it, "
-        "and what would you do differently?"
-    ),
-    "C1": "How has {topic} changed what people expect from each other, and how would you adapt?",
-    "C2": "Some people say {topic} is overrated. Weigh both sides and tell me where you stand.",
+    "en": {
+        "A1": "What do you usually do on a {day}? Tell me about it.",
+        "A2": "Tell me about the last time you {past}. What happened?",
+        "B1": "Why do you think {topic} matters, and can you give me an example from your life?",
+        "B2": (
+            "Describe a time you had to {hard}. How did you handle it, "
+            "and what would you do differently?"
+        ),
+        "C1": (
+            "How has {topic} changed what people expect from each other, and how would you adapt?"
+        ),
+        "C2": (
+            "Some people say {topic} is overrated. Weigh both sides and tell me where you stand."
+        ),
+    },
+    "fr": {
+        "A1": "Qu'est-ce que vous faites d'habitude {day} ? Parlez-moi de ça.",
+        "A2": "Racontez-moi la dernière fois que vous avez {past}. Qu'est-ce qui s'est passé ?",
+        "B1": (
+            "Pourquoi pensez-vous que {topic} est important, et pouvez-vous me donner un exemple "
+            "de votre vie ?"
+        ),
+        "B2": (
+            "Décrivez une fois où vous avez dû {hard}. Comment avez-vous géré ça, "
+            "et que feriez-vous différemment ?"
+        ),
+        "C1": (
+            "Comment {topic} a-t-il changé ce que les gens attendent les uns des autres, "
+            "et comment vous adapteriez-vous ?"
+        ),
+        "C2": (
+            "Certains disent que {topic} est surestimé. Pesez les deux côtés et dites-moi "
+            "où vous vous situez."
+        ),
+    },
 }
 FILLERS = {
-    "day": ["Saturday morning", "weekday evening", "Sunday", "rainy day"],
-    "past": ["went shopping", "travelled somewhere new", "helped a neighbour", "had an interview"],
-    "topic": ["good customer service", "teamwork", "punctuality", "learning a language"],
-    "hard": [
-        "deal with an unhappy customer",
-        "disagree with a manager",
-        "solve a problem at work",
-        "change plans at the last minute",
-    ],
+    "en": {
+        "day": ["Saturday morning", "weekday evening", "Sunday", "rainy day"],
+        "past": [
+            "went shopping",
+            "travelled somewhere new",
+            "helped a neighbour",
+            "had an interview",
+        ],
+        "topic": ["good customer service", "teamwork", "punctuality", "learning a language"],
+        "hard": [
+            "deal with an unhappy customer",
+            "disagree with a manager",
+            "solve a problem at work",
+            "change plans at the last minute",
+        ],
+    },
+    "fr": {
+        "day": ["le samedi matin", "le soir en semaine", "le dimanche", "un jour de pluie"],
+        "past": [
+            "magasiné",
+            "voyagé quelque part",
+            "aidé un voisin",
+            "passé une entrevue",
+        ],
+        "topic": ["le service à la clientèle", "le travail d'équipe", "la ponctualité", "le cégep"],
+        "hard": [
+            "gérer un client mécontent",
+            "être en désaccord avec votre gestionnaire",
+            "régler un problème au travail",
+            "changer vos plans à la dernière minute",
+        ],
+    },
 }
+SCENARIO = {
+    "en": "You are talking to someone in Canada about {topic}.",
+    "fr": "Vous parlez avec quelqu'un au Québec de {topic}.",
+}
+DEFAULT_TRANSCRIPT = {
+    "en": (
+        "So, um, last year I worked in a store and one day a customer was really angry "
+        "because her order was late. I listened to her, I apologised and I offered a "
+        "discount. In the end she was happy and she came back the next week."
+    ),
+    "fr": (
+        "Alors, euh, l'année passée j'ai travaillé dans un magasin et un jour une cliente "
+        "était vraiment fâchée parce que sa commande était en retard. Je l'ai écoutée, je me "
+        "suis excusé et j'ai offert un rabais. À la fin elle était contente et elle est "
+        "revenue la semaine suivante."
+    ),
+}
+FILLER_TOKENS = {
+    "en": (" um", " uh", "you know"),
+    "fr": (" euh", " ben", "tsé", "faque"),
+}
+
+
+def language_from_system(system: str) -> str:
+    """The fake has no separate language argument: it recognises the label in the prompt."""
+    from apps.core.languages import LANGUAGES
+
+    for spec in LANGUAGES.values():
+        if spec.code != "en" and spec.target_language_label in system:
+            return spec.code
+    return "en"
 
 
 class FakeLLM:
@@ -101,9 +181,9 @@ class FakeLLM:
         if queued:
             parsed = queued.popleft()
         elif output_format is GenerationOutput:
-            parsed = self._generate(user)
+            parsed = self._generate(user, language_from_system(system))
         elif output_format is EvaluationOutput:
-            parsed = self._evaluate(user)
+            parsed = self._evaluate(user, language_from_system(system))
         elif output_format is ImprovedAnswerOutput:
             parsed = self._improve(user)
         else:  # pragma: no cover
@@ -120,13 +200,13 @@ class FakeLLM:
         )
 
     # --- generation ---------------------------------------------------------------------
-    def _generate(self, user: str) -> GenerationOutput:
+    def _generate(self, user: str, language: str = "en") -> GenerationOutput:
         already = set(_ALREADY_RE.findall(user))
         questions = []
         for number, slug, level in _SLOT_RE.findall(user):
             seed = 0
             while True:
-                text = self._question_text(slug, level, seed, len(already))
+                text = self._question_text(slug, level, seed, len(already), language)
                 if text not in already:
                     break
                 seed += 1
@@ -138,7 +218,7 @@ class FakeLLM:
                     category=slug,
                     level=level,  # type: ignore[arg-type]
                     difficulty_within_level=["easier", "typical", "harder"][digest % 3],
-                    scenario=f"You are talking to someone in Canada about {slug.replace('-', ' ')}."
+                    scenario=SCENARIO[language].format(topic=slug.replace("-", " "))
                     if digest % 2
                     else None,
                     question=text,
@@ -152,14 +232,14 @@ class FakeLLM:
         return GenerationOutput(questions=questions)
 
     @staticmethod
-    def _question_text(slug: str, level: str, seed: int, salt: int) -> str:
-        template = QUESTION_BANK[level]
+    def _question_text(slug: str, level: str, seed: int, salt: int, language: str = "en") -> str:
+        template = QUESTION_BANK[language][level]
         index = (salt + seed) % 4
-        values = {key: options[index] for key, options in FILLERS.items()}
+        values = {key: options[index] for key, options in FILLERS[language].items()}
         return f"[{slug}] " + template.format(**values)
 
     # --- evaluation -----------------------------------------------------------------------
-    def _evaluate(self, user: str) -> EvaluationOutput:
+    def _evaluate(self, user: str, language: str = "en") -> EvaluationOutput:
         match = _TRANSCRIPT_RE.search(user)
         transcript = match.group(1).strip() if match else ""
         words = len(transcript.split())
@@ -176,7 +256,7 @@ class FakeLLM:
             )
         structure = min(5, max(1, 1 + words // 25))
         grammar = 3 if "I have work" not in transcript else 2
-        fillers = sum(transcript.lower().count(f) for f in (" um", " uh", "you know"))
+        fillers = sum(transcript.lower().count(f) for f in FILLER_TOKENS[language])
         fluency = 4 if fillers <= 1 else 3 if fillers <= 4 else 2
         issues = []
         if "I have work" in transcript:
@@ -217,6 +297,7 @@ class FakeLLM:
 class FakeTranscriber:
     provider = "fake"
     _queued: deque[str] = deque()
+    calls: list[dict] = []
     fail_next: Exception | None = None
 
     @classmethod
@@ -226,20 +307,18 @@ class FakeTranscriber:
     @classmethod
     def reset(cls) -> None:
         cls._queued.clear()
+        cls.calls.clear()
         cls.fail_next = None
 
-    def transcribe(self, path, *, model=None) -> TranscriptionResult:
+    def transcribe(self, path, *, model=None, language="en", prompt=None) -> TranscriptionResult:
+        FakeTranscriber.calls.append({"model": model, "language": language, "prompt": prompt})
         if FakeTranscriber.fail_next is not None:
             exc, FakeTranscriber.fail_next = FakeTranscriber.fail_next, None
             raise exc
         if FakeTranscriber._queued:
             text = FakeTranscriber._queued.popleft()
         else:
-            text = (
-                "So, um, last year I worked in a store and one day a customer was really angry "
-                "because her order was late. I listened to her, I apologised and I offered a "
-                "discount. In the end she was happy and she came back the next week."
-            )
+            text = DEFAULT_TRANSCRIPT.get(language, DEFAULT_TRANSCRIPT["en"])
         return TranscriptionResult(
             text=text,
             model=model or "fake-whisper",

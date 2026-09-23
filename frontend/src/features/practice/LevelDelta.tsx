@@ -1,6 +1,7 @@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/cn'
 import { formatNumber, formatSigned } from '@/lib/format'
+import { languageMeta } from '@/lib/languages'
 import { probePassed } from '@/lib/levels'
 import type { Attempt, Card } from '@/types/api'
 
@@ -34,7 +35,9 @@ export function LevelDelta({ attempt, card }: LevelDeltaProps) {
 
   return (
     <section aria-label="Variação de nível" className="rounded-2xl border border-border bg-surface p-5">
-      <p className="text-xs uppercase tracking-wide text-fg-muted">Seu nível</p>
+      <p className="text-xs uppercase tracking-wide text-fg-muted">
+        Seu nível {languageMeta(card.language).inPhrase}
+      </p>
       <p className="mt-1 flex flex-wrap items-baseline gap-x-3 text-display text-4xl tabular">
         <span
           className={cn(

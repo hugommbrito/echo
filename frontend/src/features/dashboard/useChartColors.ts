@@ -22,6 +22,8 @@ export type ChartColors = {
   bad: string
   band: string
   bandAlt: string
+  langEn: string
+  langFr: string
 }
 
 const FALLBACK: ChartColors = {
@@ -41,6 +43,8 @@ const FALLBACK: ChartColors = {
   bad: '#d03b3b',
   band: '#f3f2ee',
   bandAlt: '#fcfcfb',
+  langEn: '#eda100',
+  langFr: '#e87ba4',
 }
 
 const VARS: Record<keyof ChartColors, string> = {
@@ -60,6 +64,8 @@ const VARS: Record<keyof ChartColors, string> = {
   bad: '--status-critical',
   band: '--chart-band',
   bandAlt: '--chart-band-alt',
+  langEn: '--language-en',
+  langFr: '--language-fr',
 }
 
 function readColors(): ChartColors {
@@ -92,4 +98,11 @@ export function useChartColors(): ChartColors {
     }
   }, [])
   return colors
+}
+
+/** Series color for a practised language; unknown codes fall back to text ink. */
+export function languageColor(colors: ChartColors, code: string): string {
+  if (code === 'en') return colors.langEn
+  if (code === 'fr') return colors.langFr
+  return colors.ink
 }

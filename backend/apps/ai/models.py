@@ -21,6 +21,7 @@ class AIRequestLog(OwnedModel):
     kind = models.CharField(max_length=20, choices=AIRequestKind.choices)
     provider = models.CharField(max_length=20)
     model = models.CharField(max_length=80)
+    language = models.CharField(max_length=8, blank=True, default="")
     input_tokens = models.PositiveIntegerField(default=0)
     output_tokens = models.PositiveIntegerField(default=0)
     cache_read_input_tokens = models.PositiveIntegerField(default=0)

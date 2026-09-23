@@ -10,8 +10,12 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone as dj_timezone
 
+from apps.core.languages import LanguageCode
+from apps.core.models import OwnedModel
+
 
 def default_initial_rating() -> int:
+    """Kept for the initial migration; the rating now lives in `LanguageProfile`."""
     return settings.ECHO_LEVEL_INITIAL_RATING
 
 
@@ -62,11 +66,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     feedback_language = models.CharField(
         max_length=8, choices=FeedbackLanguage.choices, default=FeedbackLanguage.PT_BR
     )
-    default_new_cards_per_day = models.PositiveSmallIntegerField(default=3)
-
-    level_rating = models.IntegerField(default=default_initial_rating)
-    level_rating_initial = models.IntegerField(null=True, blank=True)
-    counted_attempts = models.PositiveIntegerField(default=0)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -84,11 +83,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self) -> str:
         return self.email
 
-    def save(self, *args, **kwargs):
-        if self.level_rating_initial is None:
-            self.level_rating_initial = self.level_rating
-        super().save(*args, **kwargs)
-
     # --- Time helpers -------------------------------------------------------------------
     @property
     def tzinfo(self) -> dt.tzinfo:
@@ -103,7 +97,31 @@ class User(AbstractBaseUser, PermissionsMixin):
     def local_today(self) -> dt.date:
         return self.local_now().date()
 
-    # --- Level helpers ------------------------------------------------------------------
+
+class LanguageProfile(OwnedModel):
+    """One practised language of a learner: its own ELO rating, activity flag and daily target.
+
+    Created when the learner activates the language (self-placement A1/A2/B1); never deleted —
+    pausing keeps the history and the rating.
+    """
+
+    language = models.CharField(max_length=8, choices=LanguageCode.choices)
+    level_rating = models.IntegerField()
+    level_rating_initial = models.IntegerField()
+    counted_attempts = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    default_new_cards_per_day = models.PositiveSmallIntegerField(default=3)
+    activated_at = models.DateTimeField(default=dj_timezone.now)
+
+    class Meta(OwnedModel.Meta):
+        ordering = ["activated_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "language"], name="uniq_language_profile")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} {self.language} ({self.level_rating})"
+
     @property
     def level_band(self) -> str:
         from apps.leveling.elo import band_for_rating

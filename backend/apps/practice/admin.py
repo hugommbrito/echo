@@ -1,7 +1,13 @@
 from django.contrib import admin
 
 from apps.core.admin import OwnedModelAdmin
-from apps.practice.models import Attempt, DailySession, Evaluation, SessionNewCard
+from apps.practice.models import (
+    Attempt,
+    DailySession,
+    Evaluation,
+    SessionLanguagePlan,
+    SessionNewCard,
+)
 
 
 class SessionNewCardInline(admin.TabularInline):
@@ -14,11 +20,33 @@ class SessionNewCardInline(admin.TabularInline):
         return SessionNewCard.all_users.select_related("card")
 
 
+class SessionLanguagePlanInline(admin.TabularInline):
+    model = SessionLanguagePlan
+    extra = 0
+    fields = [
+        "language",
+        "new_cards_target",
+        "rating_at_start",
+        "generation_status",
+        "generated_count",
+        "generation_error",
+    ]
+    readonly_fields = fields
+
+    def get_queryset(self, request):
+        return SessionLanguagePlan.all_users.get_queryset()
+
+
 @admin.register(DailySession)
 class DailySessionAdmin(OwnedModelAdmin):
-    list_display = ["session_date", "status", "new_cards_target", "rating_at_start", "completed_at"]
+    list_display = ["session_date", "status", "new_cards_target", "completed_at"]
+
+    @admin.display(description="New cards")
+    def new_cards_target(self, session):
+        return session.new_cards_target_total
+
     list_filter = ["status", "session_date"]
-    inlines = [SessionNewCardInline]
+    inlines = [SessionLanguagePlanInline, SessionNewCardInline]
 
 
 @admin.register(Attempt)

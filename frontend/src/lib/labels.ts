@@ -35,6 +35,10 @@ export const GRAMMAR_ISSUE_LABELS: Record<GrammarIssueType, string> = {
   word_choice: 'escolha de palavra',
   missing_word: 'palavra faltando',
   extra_word: 'palavra a mais',
+  agreement: 'concordância (gênero/número)',
+  verb_form: 'forma verbal',
+  negation: 'negação',
+  register: 'registro (tu/vous)',
   other: 'outro',
 }
 

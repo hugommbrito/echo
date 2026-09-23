@@ -199,7 +199,10 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Echo API",
-    "DESCRIPTION": "English speaking practice with spaced repetition and an adaptive level.",
+    "DESCRIPTION": (
+        "Speaking practice (English and French) with spaced repetition and an adaptive level "
+        "per language."
+    ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
@@ -208,6 +211,8 @@ SPECTACULAR_SETTINGS = {
         "SessionStatusEnum": "apps.practice.models.SessionStatus",
         "AttemptStatusEnum": "apps.practice.models.AttemptStatus",
         "CardStatusEnum": "apps.cards.models.CardStatus",
+        "LanguageCodeEnum": "apps.core.languages.LanguageCode",
+        "PlanStatusEnum": "apps.practice.models.PlanStatus",
     },
 }
 
@@ -232,7 +237,11 @@ OPENAI_API_KEY = env("OPENAI_API_KEY")
 # ECHO_* — product parameters (see docs/PLAN.md §12.2). Change here, never in code.
 # =====================================================================================
 ECHO_AI_PROVIDER = env("ECHO_AI_PROVIDER", "live")  # live | fake
-ECHO_PROMPT_VERSION = "v1"
+# Practised languages live in apps/core/languages.py; these pick defaults.
+ECHO_DEFAULT_LANGUAGE = "en"
+ECHO_SELF_PLACEMENT_LEVELS = ["A1", "A2", "B1"]
+ECHO_SELF_PLACEMENT_DEFAULT_LEVEL = "A1"
+ECHO_PROMPT_VERSION = "v2"
 ECHO_EVALUATION_MODEL = env("ECHO_EVALUATION_MODEL", "claude-opus-5")
 ECHO_EVALUATION_EFFORT = env("ECHO_EVALUATION_EFFORT", "medium")
 ECHO_GENERATION_MODEL = env("ECHO_GENERATION_MODEL", "claude-sonnet-5")

@@ -10,6 +10,7 @@ class AIRequestLogAdmin(OwnedModelAdmin):
     list_display = [
         "created_at",
         "kind",
+        "language",
         "provider",
         "model",
         "input_tokens",
@@ -19,7 +20,7 @@ class AIRequestLogAdmin(OwnedModelAdmin):
         "latency_ms",
         "status",
     ]
-    list_filter = ["kind", "provider", "model", "status", "created_at"]
+    list_filter = ["kind", "language", "provider", "model", "status", "created_at"]
     date_hierarchy = "created_at"
     readonly_fields = [f.name for f in AIRequestLog._meta.fields]
 

@@ -10,7 +10,6 @@ from django.conf import settings
 
 from apps.ai.clients.base import TranscriptionResult
 from apps.ai.exceptions import TranscriptionError
-from apps.ai.prompts import whisper_prompt
 
 
 class OpenAITranscriptionClient:
@@ -21,7 +20,14 @@ class OpenAITranscriptionClient:
             api_key=api_key or settings.OPENAI_API_KEY, timeout=timeout, max_retries=2
         )
 
-    def transcribe(self, path: str | Path, *, model: str | None = None) -> TranscriptionResult:
+    def transcribe(
+        self,
+        path: str | Path,
+        *,
+        model: str | None = None,
+        language: str = "en",
+        prompt: str | None = None,
+    ) -> TranscriptionResult:
         model = model or settings.ECHO_TRANSCRIPTION_MODEL
         verbose = model == "whisper-1"  # only whisper-1 returns verbose_json (segments + duration)
         started = time.monotonic()
@@ -30,10 +36,11 @@ class OpenAITranscriptionClient:
                 kwargs = {
                     "model": model,
                     "file": audio,
-                    "language": "en",
-                    "prompt": whisper_prompt(),
+                    "language": language,
                     "response_format": "verbose_json" if verbose else "json",
                 }
+                if prompt:
+                    kwargs["prompt"] = prompt
                 if verbose:
                     kwargs["temperature"] = 0
                 response = self._client.audio.transcriptions.create(**kwargs)

@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 import time_machine
 
+from apps.accounts.models import LanguageProfile
 from apps.ai.clients.fake import FakeLLM, FakeProbe, FakeTranscriber
 from apps.ai.exceptions import TranscriptionError
 from apps.ai.models import AIRequestLog
@@ -83,13 +84,17 @@ def test_full_pipeline_moves_scheduler_and_rating(
         and change["k_factor"] == 40
     )
     assert change["rating_after"] == 1150 + change["delta"]
-    user_a.refresh_from_db()
-    assert user_a.level_rating == change["rating_after"] and user_a.counted_attempts == 1
+    assert body["language"] == "en"
+    profile = LanguageProfile.all_users.get(user=user_a, language="en")
+    assert profile.level_rating == change["rating_after"] and profile.counted_attempts == 1
     with owner_context(user_a.pk):
         assert ReviewLog.objects.count() == 1 and LevelLog.objects.count() == 1
-        kinds = list(AIRequestLog.objects.order_by("created_at").values_list("kind", flat=True))
-    assert kinds == ["transcribe", "evaluate"]
-    me = client_a.get("/api/v1/me/").json()["level"]
+        assert LevelLog.objects.get().language == "en"
+        kinds = list(AIRequestLog.objects.order_by("created_at").values_list("kind", "language"))
+    assert kinds == [("transcribe", "en"), ("evaluate", "en")]
+    assert FakeTranscriber.calls[-1]["language"] == "en"
+    assert FakeTranscriber.calls[-1]["prompt"].startswith("Um, uh")
+    me = client_a.get("/api/v1/me/").json()["languages"][0]["level"]
     assert me["rating"] == change["rating_after"] and me["counted_attempts"] == 1
 
 
@@ -110,8 +115,7 @@ def test_second_attempt_same_day_is_recorded_but_does_not_count(
     assert first["counts_for_scheduling"] is True and second["counts_for_scheduling"] is False
     assert second["review"] is None and second["level_change"] is None
     assert second["evaluation"] is not None
-    user_a.refresh_from_db()
-    assert user_a.counted_attempts == 1
+    assert LanguageProfile.all_users.get(user=user_a, language="en").counted_attempts == 1
     history = client_a.get(f"/api/v1/cards/{card.id}/history/").json()
     assert [h["attempt_number"] for h in history] == [2, 1]
     detail = client_a.get(f"/api/v1/cards/{card.id}/").json()
@@ -124,7 +128,7 @@ def test_insufficient_speech_scores_one_and_keeps_card_new(
 ):
     session = client_a.post(
         "/api/v1/sessions/",
-        {"category_ids": [str(global_categories["travel"].id)], "new_cards_target": 1},
+        {"category_ids": [str(global_categories["travel"].id)], "new_cards_targets": {"en": 1}},
         format="json",
     ).json()
     card_id = client_a.get(f"/api/v1/sessions/{session['id']}/queue/").json()[0]["card"]["id"]
@@ -158,7 +162,7 @@ def test_session_completes_when_queue_empties(
 ):
     session = client_a.post(
         "/api/v1/sessions/",
-        {"category_ids": [str(global_categories["travel"].id)], "new_cards_target": 1},
+        {"category_ids": [str(global_categories["travel"].id)], "new_cards_targets": {"en": 1}},
         format="json",
     ).json()
     card_id = client_a.get(f"/api/v1/sessions/{session['id']}/queue/").json()[0]["card"]["id"]
@@ -186,7 +190,7 @@ def test_due_card_review_counts_in_progress(
         user_a, maturity="learning", due_date=dt.date(2026, 9, 15), interval_days=6, repetitions=2
     )
     session = client_a.post(
-        "/api/v1/sessions/", {"category_ids": [], "new_cards_target": 0}, format="json"
+        "/api/v1/sessions/", {"category_ids": [], "new_cards_targets": {"en": 0}}, format="json"
     ).json()
     assert session["status"] == "ready" and session["progress"]["due_total"] == 1
     FakeTranscriber.queue(GOOD_TRANSCRIPT)
@@ -223,8 +227,7 @@ def test_probe_rejects_out_of_range_or_corrupt_audio(client_a, user_a, make_card
     ).json()
     assert long_["failure_stage"] == "probing" and "too long" in long_["error_message"]
     assert short["review"] is None and len(FakeLLM.calls) == 0
-    user_a.refresh_from_db()
-    assert user_a.counted_attempts == 0
+    assert LanguageProfile.all_users.get(user=user_a, language="en").counted_attempts == 0
 
 
 @time_machine.travel(NOON_UTC, tick=False)

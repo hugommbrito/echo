@@ -59,5 +59,9 @@ export const ISSUE_TYPE_LABELS: Record<string, string> = {
   word_choice: 'Escolha de palavra',
   missing_word: 'Palavra faltando',
   extra_word: 'Palavra a mais',
+  agreement: 'Concordância (gênero/número)',
+  verb_form: 'Forma verbal',
+  negation: 'Negação',
+  register: 'Registro (tu/vous)',
   other: 'Outro',
 }

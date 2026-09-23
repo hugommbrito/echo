@@ -68,9 +68,9 @@ function SmallBars({
   )
 }
 
-export function AdvancedSection({ colors }: { colors: ChartColors }) {
+export function AdvancedSection({ colors, language }: { colors: ChartColors; language: string | null }) {
   const [open, setOpen] = useState(false)
-  const { data } = useAdvanced(open)
+  const { data } = useAdvanced(open, language)
   return (
     <section className="rounded-2xl border border-border bg-surface shadow-sm">
       <button

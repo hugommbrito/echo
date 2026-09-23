@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import models
 
+from apps.core.languages import LanguageCode
 from apps.core.models import OwnedModel
 
 
@@ -12,6 +13,7 @@ class LevelLog(OwnedModel):
         "practice.Attempt", on_delete=models.CASCADE, related_name="level_change"
     )
     card = models.ForeignKey("cards.Card", on_delete=models.CASCADE, related_name="level_logs")
+    language = models.CharField(max_length=8, choices=LanguageCode.choices)
     logged_on = models.DateField()
     rating_before = models.IntegerField()
     rating_after = models.IntegerField()
@@ -24,4 +26,7 @@ class LevelLog(OwnedModel):
 
     class Meta(OwnedModel.Meta):
         ordering = ["-logged_on", "-created_at"]
-        indexes = [models.Index(fields=["user", "logged_on"])]
+        indexes = [
+            models.Index(fields=["user", "logged_on"]),
+            models.Index(fields=["user", "language", "logged_on"]),
+        ]

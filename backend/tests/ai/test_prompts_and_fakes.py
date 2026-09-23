@@ -4,19 +4,49 @@ import pytest
 
 from apps.ai import pricing, prompts
 from apps.ai.clients.fake import FakeLLM
-from apps.ai.schemas import EvaluationOutput, GenerationOutput
+from apps.ai.schemas import EvaluationOutput, GenerationOutput, GrammarIssue
+from apps.core.languages import get_language
 from apps.leveling.probes import plan_slots
+
+EN = get_language("en")
+FR = get_language("fr")
 
 
 def test_evaluation_system_prompt_is_rendered_per_level_and_language():
-    text = prompts.evaluation_system("B1", "pt-BR")
+    text = prompts.evaluation_system(EN, "B1", "pt-BR")
     assert "written for CEFR level B1" in text
     assert "Brazilian Portuguese" in text
-    assert "{question_level}" not in text and "{feedback_language}" not in text
+    assert "experienced ESL teacher" in text and "English speaking-practice app" in text
+    assert "(um, uh, like, you know, so)" in text
+    assert "Quote the learner's English exactly" in text
+    assert "{" not in text.replace("{question_level}", "") or "{question_level}" not in text
     assert (
         "Brazilian Portuguese"
-        not in prompts.evaluation_system("B1", "en").split("Write all feedback text in ")[1][:8]
+        not in prompts.evaluation_system(EN, "B1", "en").split("Write all feedback text in ")[1][:8]
     )
+
+
+def test_prompts_are_rendered_per_practised_language():
+    generation = prompts.generation_system(FR)
+    assert "Canadian French (Québec) speaking-practice app" in generation
+    assert "write the questions in Canadian French (Québec)" in generation
+    assert "- A1: " in generation and "épicerie" in generation and "« vous »" in generation
+    assert "{" not in generation
+
+    evaluation = prompts.evaluation_system(FR, "A2", "pt-BR")
+    assert "experienced FLE teacher" in evaluation
+    assert "(euh, ben, là, tsé" in evaluation
+    assert "Quote the learner's Canadian French (Québec) exactly" in evaluation
+    assert "Accept France-French forms" in evaluation
+    assert "gender and number agreement" in evaluation
+    assert "{" not in evaluation
+
+    improved = prompts.improved_answer_system(FR, "A2", "pt-BR")
+    assert "Write natural spoken Canadian French (Québec) one step above A2" in improved
+    assert "{" not in improved
+
+    assert prompts.whisper_prompt(FR).startswith("Euh, ben")
+    assert prompts.whisper_prompt(EN).startswith("Um, uh")
 
 
 def test_render_leaves_unknown_braces_alone():
@@ -102,6 +132,28 @@ def test_fake_llm_generates_one_question_per_slot_without_repeats(global_categor
     assert [q.level for q in questions] == [s.level for s in slots]
     assert len({q.question for q in questions}) == 6
     assert already[0][1] not in {q.question for q in questions}
+
+
+@pytest.mark.django_db
+def test_fake_llm_writes_french_when_the_system_prompt_asks_for_it(global_categories):
+    cats = [global_categories["shopping"]]
+    slots = plan_slots(2, cats, "A1")
+    result = FakeLLM().parse(
+        model="m",
+        system=prompts.generation_system(FR),
+        user=prompts.generation_user(slots, cats, []),
+        output_format=GenerationOutput,
+    )
+    texts = [q.question for q in result.parsed.questions]
+    assert all("[shopping]" in t for t in texts)
+    assert any("vous" in t or "Racontez" in t for t in texts)
+    scenarios = [q.scenario for q in result.parsed.questions if q.scenario]
+    assert all(s.startswith("Vous parlez") for s in scenarios)
+
+
+def test_grammar_issue_types_cover_french_agreement():
+    for kind in ("agreement", "verb_form", "negation", "register"):
+        assert GrammarIssue(quote="q", correction="c", type=kind, explanation="e").type == kind
 
 
 def test_fake_llm_scores_short_transcripts_as_one():

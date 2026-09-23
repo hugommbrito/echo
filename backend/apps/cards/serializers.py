@@ -53,6 +53,7 @@ class CardSerializer(serializers.ModelSerializer):
         model = Card
         fields = [
             "id",
+            "language",
             "category",
             "question_text",
             "scenario",
