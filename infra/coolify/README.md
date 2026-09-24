@@ -208,6 +208,11 @@ recurso quando existir um `beat_schedule`.
 ## 4. Variáveis de ambiente (`echo-web` e `echo-worker`)
 
 Gere a `SECRET_KEY` localmente: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`.
+Gere também a `ECHO_FIELD_ENCRYPTION_KEY` (cifra as chaves de IA cadastradas por usuário):
+`python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+(precisa do pacote `cryptography`; ou rode dentro do container web). Use **o mesmo valor** em
+`echo-web` e `echo-worker` e guarde-o num lugar seguro: perder essa chave = perder as chaves
+cadastradas (o app passa a tratá-las como ausentes e volta para as globais).
 
 ```
 DJANGO_SETTINGS_MODULE=config.settings.prod
@@ -216,8 +221,9 @@ ALLOWED_HOSTS=echo.example.com                      # vários hosts: separados p
 CSRF_TRUSTED_ORIGINS=https://echo.example.com
 DATABASE_URL=postgres://echo:<senha>@<container-postgres>:5432/echo   # "Postgres URL (internal)"
 REDIS_URL=redis://:<senha>@<container-redis>:6379/0                  # "Redis URL (internal)"
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...                        # chaves globais (fallback de quem não tem chave própria)
+OPENAI_API_KEY=sk-...                               # também no web: transcrição/TTS sob demanda
+ECHO_FIELD_ENCRYPTION_KEY=<chave Fernet>            # obrigatória; mesma em web e worker
 ECHO_AUDIO_STORAGE=s3
 S3_BUCKET_NAME=echo-audio
 S3_ENDPOINT_URL=https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
@@ -234,7 +240,18 @@ ECHO_PROCESS=worker
 
 Opcionais: `ECHO_TRANSCRIPTION_MODEL=gpt-4o-transcribe` (teste A/B), `ECHO_EVALUATION_MODEL`,
 `ECHO_GENERATION_MODEL`, `WEB_THREADS` (default 4), `SECURE_SSL_REDIRECT=1` (desnecessário: o
-Traefik já redireciona). Todos os parâmetros `ECHO_*` estão em `backend/config/settings/base.py`.
+Traefik já redireciona). Pergunta falada (TTS): `ECHO_TTS_MODEL` (default `gpt-4o-mini-tts`),
+`ECHO_TTS_VOICE_EN`/`ECHO_TTS_VOICE_FR` (defaults `marin`/`cedar`), `ECHO_TTS_INSTRUCTIONS_EN`/`_FR`.
+Modelos usados quando as chamadas de um usuário vão pela OpenAI: `ECHO_OPENAI_EVALUATION_MODEL`
+(default `gpt-6-astra`), `ECHO_OPENAI_GENERATION_MODEL` e `ECHO_OPENAI_IMPROVED_ANSWER_MODEL`
+(default `gpt-6-sol`). Todos os parâmetros `ECHO_*` estão em `backend/config/settings/base.py`.
+
+Pós-deploy desta versão: (1) rode uma vez `python manage.py synthesize_card_audio` no container
+web para gerar o áudio dos cards já existentes (os novos são gerados pelo worker ao nascer);
+(2) chaves de IA por usuário são cadastradas no admin Django (Users › *AI keys*): sem chave própria
+o usuário usa as globais; só OpenAI própria → tudo (texto, transcrição, TTS) na OpenAI dele; só
+Anthropic própria → texto na Anthropic dele e fala na OpenAI global. Cada linha de
+`/admin/ai/airequestlog/` mostra `key_source` (`user`/`global`) e o custo estimado.
 
 ---
 

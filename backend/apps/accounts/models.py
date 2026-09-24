@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone as dj_timezone
 
+from apps.core.fields import EncryptedTextField
 from apps.core.languages import LanguageCode
 from apps.core.models import OwnedModel
 
@@ -29,6 +30,21 @@ def validate_timezone(value: str) -> None:
 class FeedbackLanguage(models.TextChoices):
     PT_BR = "pt-BR", "Português (Brasil)"
     EN = "en", "English"
+
+
+class QuestionMode(models.TextChoices):
+    """How a practice question is presented: text only, spoken only, or both."""
+
+    READ = "read", "Read"
+    LISTEN = "listen", "Listen"
+    BOTH = "both", "Read and listen"
+
+
+def key_hint(value: str | None) -> str | None:
+    """Last four characters of a secret, for display (`…a1b2`); None when unset."""
+    if not value:
+        return None
+    return "…" + value[-4:]
 
 
 class UserManager(BaseUserManager):
@@ -66,6 +82,17 @@ class User(AbstractBaseUser, PermissionsMixin):
     feedback_language = models.CharField(
         max_length=8, choices=FeedbackLanguage.choices, default=FeedbackLanguage.PT_BR
     )
+    question_mode = models.CharField(
+        max_length=8, choices=QuestionMode.choices, default=QuestionMode.READ
+    )
+    show_thinking_timer = models.BooleanField(default=True)
+
+    # Per-user provider keys (bring your own key). Encrypted at rest; empty = use the global key.
+    # Entered by the admin only; never exposed by the API (see `apps.ai.routing`).
+    anthropic_api_key = EncryptedTextField(blank=True, default="")
+    openai_api_key = EncryptedTextField(blank=True, default="")
+    anthropic_api_key_updated_at = models.DateTimeField(null=True, blank=True)
+    openai_api_key_updated_at = models.DateTimeField(null=True, blank=True)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

@@ -1,4 +1,4 @@
-import type { AttemptStatus, CardStatus, GrammarIssueType, SessionStatus } from '@/types/api'
+import type { AttemptStatus, CardStatus, GrammarIssueType, QuestionMode, SessionStatus } from '@/types/api'
 
 export const SESSION_STATUS_LABELS: Record<SessionStatus, string> = {
   generating: 'Gerando perguntas',
@@ -22,6 +22,18 @@ export const ATTEMPT_STATUS_LABELS: Record<AttemptStatus, string> = {
   scheduling: 'Agendando',
   completed: 'Concluído',
   failed: 'Falhou',
+}
+
+export const QUESTION_MODE_LABELS: Record<QuestionMode, string> = {
+  read: 'Ler',
+  listen: 'Ouvir',
+  both: 'Ler e ouvir',
+}
+
+export const QUESTION_MODE_DESCRIPTIONS: Record<QuestionMode, string> = {
+  read: 'Só o texto da pergunta.',
+  listen: 'Só o áudio; o texto fica escondido até você pedir.',
+  both: 'Texto e áudio.',
 }
 
 export const GRAMMAR_ISSUE_LABELS: Record<GrammarIssueType, string> = {

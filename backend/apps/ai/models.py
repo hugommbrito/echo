@@ -10,6 +10,12 @@ class AIRequestKind(models.TextChoices):
     TRANSCRIBE = "transcribe", "Transcribe"
     EVALUATE = "evaluate", "Evaluate"
     IMPROVE_ANSWER = "improve_answer", "Improve answer"
+    TTS = "tts", "Text to speech"
+
+
+class KeySource(models.TextChoices):
+    USER = "user", "User's own key"
+    GLOBAL = "global", "Global key"
 
 
 class AIRequestStatus(models.TextChoices):
@@ -20,6 +26,7 @@ class AIRequestStatus(models.TextChoices):
 class AIRequestLog(OwnedModel):
     kind = models.CharField(max_length=20, choices=AIRequestKind.choices)
     provider = models.CharField(max_length=20)
+    key_source = models.CharField(max_length=8, choices=KeySource.choices, default=KeySource.GLOBAL)
     model = models.CharField(max_length=80)
     language = models.CharField(max_length=8, blank=True, default="")
     input_tokens = models.PositiveIntegerField(default=0)
@@ -36,4 +43,8 @@ class AIRequestLog(OwnedModel):
 
     class Meta(OwnedModel.Meta):
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["user", "created_at"]), models.Index(fields=["kind"])]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["kind"]),
+            models.Index(fields=["user", "key_source"]),
+        ]

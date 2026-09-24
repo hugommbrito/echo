@@ -48,6 +48,8 @@ class CardSerializer(serializers.ModelSerializer):
     category = CategoryBriefSerializer(read_only=True)
     maturity = serializers.SerializerMethodField()
     attempt_count = serializers.IntegerField(read_only=True, default=0)
+    question_audio_url = serializers.SerializerMethodField()
+    question_audio_seconds = serializers.FloatField(read_only=True, allow_null=True)
 
     class Meta:
         model = Card
@@ -65,6 +67,8 @@ class CardSerializer(serializers.ModelSerializer):
             "source",
             "maturity",
             "attempt_count",
+            "question_audio_url",
+            "question_audio_seconds",
             "created_at",
         ]
         read_only_fields = fields
@@ -72,6 +76,14 @@ class CardSerializer(serializers.ModelSerializer):
     def get_maturity(self, card: Card) -> str:
         scheduler = getattr(card, "scheduler", None)
         return scheduler.maturity if scheduler is not None else "new"
+
+    def get_question_audio_url(self, card: Card) -> str | None:
+        """Signed URL when stored on S3; None until synthesised (the client then falls back to
+        `GET /cards/{id}/audio/`, which generates on demand)."""
+        try:
+            return card.question_audio.url if card.question_audio else None
+        except (ValueError, NotImplementedError):
+            return None
 
 
 class CardDetailSerializer(CardSerializer):

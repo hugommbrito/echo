@@ -114,6 +114,8 @@ def evaluation_user(
     duration_seconds: float,
     word_count: int,
     words_per_minute: float,
+    thinking_seconds: float | None = None,
+    thinking_baseline_seconds: float | None = None,
 ) -> str:
     lines = [
         f"Category: {category_name}",
@@ -124,6 +126,8 @@ def evaluation_user(
     ]
     lines.extend(f"- {point}" for point in key_points)
     lines.append("")
+    if thinking_seconds is not None:
+        lines.append(thinking_time_line(thinking_seconds, thinking_baseline_seconds))
     lines.append(
         f"Learner's answer — automatic transcript ({duration_seconds:.0f} s, {word_count} words, "
         f"{words_per_minute:.0f} words per minute):"
@@ -132,6 +136,26 @@ def evaluation_user(
     lines.append(transcript_text.strip())
     lines.append('"""')
     return "\n".join(lines)
+
+
+def thinking_time_line(seconds: float, baseline: float | None) -> str:
+    """One line for the evaluator: the pause before speaking, against the learner's own median.
+
+    A weak signal only (the system prompt says so); the wording never scores anything itself.
+    """
+    if baseline is None or baseline <= 0:
+        return f"Thinking time before recording: {seconds:.0f} s (no personal reference yet)."
+    ratio = seconds / baseline
+    if ratio <= 1.0:
+        label = "within the learner's usual range"
+    elif ratio <= settings.ECHO_THINKING_YELLOW_RATIO:
+        label = "somewhat slower than usual"
+    else:
+        label = "much slower than usual"
+    return (
+        f"Thinking time before recording: {seconds:.0f} s "
+        f"(the learner's own recent median: {baseline:.0f} s — {label})."
+    )
 
 
 # --- Improved answer (on demand) --------------------------------------------------------------

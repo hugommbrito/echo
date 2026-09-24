@@ -12,12 +12,23 @@ from apps.core.storage import extension_for
 from apps.core.tasks import enqueue
 from apps.practice.models import Attempt, AttemptStatus, DailySession
 from apps.practice.tasks import process_attempt
+from apps.practice.thinking_time import clamp_thinking_seconds
 
 ALLOWED_AUDIO_PREFIXES = ("audio/", "video/webm", "video/mp4", "application/octet-stream")
 
 
 def create_attempt(
-    user, *, card_id, session_id, audio, mime_type: str | None, client_duration
+    user,
+    *,
+    card_id,
+    session_id,
+    audio,
+    mime_type: str | None,
+    client_duration,
+    thinking_seconds=None,
+    question_mode: str | None = None,
+    audio_replays: int = 0,
+    text_revealed: bool = False,
 ) -> Attempt:
     if audio is None:
         raise ValidationError({"audio": ["An audio file is required."]}, code="audio_required")
@@ -60,6 +71,11 @@ def create_attempt(
             audio_mime=mime,
             audio_size_bytes=audio.size,
             client_duration_seconds=client_duration,
+            thinking_seconds=clamp_thinking_seconds(thinking_seconds),
+            # Snapshot of the preference when the client does not say how it showed the question.
+            question_mode=question_mode or user.question_mode,
+            audio_replays=max(0, min(int(audio_replays or 0), 1000)),
+            text_revealed=bool(text_revealed),
             status=AttemptStatus.UPLOADED,
         )
         filename = f"{attempt.id}.{extension_for(mime, getattr(audio, 'name', None))}"

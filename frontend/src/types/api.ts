@@ -67,6 +67,17 @@ export interface UserLevel {
   initial_rating: number
 }
 
+/** How the practice question is presented: text only, spoken only, or both. */
+export type QuestionMode = 'read' | 'listen' | 'both'
+
+/** The learner's own reference for the thinking time (median of recent attempts, per language). */
+export interface ThinkingTimeProfile {
+  baseline_seconds: number | null
+  samples: number
+  /** True while she has too few measured attempts and the fixed default applies. */
+  is_default: boolean
+}
+
 /** One practised language of the learner: own ELO level, activity flag and daily target. */
 export interface LanguageProfile {
   code: LanguageCode
@@ -76,6 +87,38 @@ export interface LanguageProfile {
   default_new_cards_per_day: number
   activated_at: ISODateTime
   level: UserLevel
+  thinking_time: ThinkingTimeProfile
+}
+
+/** Where calls to one provider go for this user. Never includes the key itself. */
+export interface AIProviderStatus {
+  /** A key of the user's own is configured. */
+  configured: boolean
+  /** Last four characters of the user's own key ("…a1b2"), or null. */
+  hint: string | null
+  /** Which key serves the calls: the user's, the global one, or none (provider unused/unavailable). */
+  source: 'user' | 'global' | 'none'
+}
+
+export interface AIStatus {
+  llm_provider: 'anthropic' | 'openai' | null
+  /** Transcription and text-to-speech need an OpenAI key (own or global). */
+  speech_available: boolean
+  anthropic: AIProviderStatus
+  openai: AIProviderStatus
+}
+
+export interface AIUsageSummary {
+  anthropic_usd: number
+  openai_usd: number
+  total_usd: number
+  requests: number
+}
+
+export interface AIUsage {
+  month: AIUsageSummary & { starts_on: ISODate }
+  all_time: AIUsageSummary
+  by_key_source: { user_usd: number; global_usd: number }
 }
 
 export interface LanguageCatalogItem {
@@ -101,14 +144,19 @@ export interface User {
   full_name: string
   timezone: string
   feedback_language: FeedbackLanguage
+  question_mode: QuestionMode
+  show_thinking_timer: boolean
   is_staff: boolean
   /** Every profile (paused ones included, `is_active: false`), ordered by language code. */
   languages: LanguageProfile[]
+  ai: AIStatus
 }
 
 export interface UserPatch {
   timezone?: string
   feedback_language?: FeedbackLanguage
+  question_mode?: QuestionMode
+  show_thinking_timer?: boolean
 }
 
 export interface LoginPayload {
@@ -171,6 +219,9 @@ export interface Card {
   source: string
   maturity: Maturity
   attempt_count: number
+  /** Spoken question (signed URL on S3); null until synthesised — use `GET /cards/{id}/audio/`. */
+  question_audio_url: string | null
+  question_audio_seconds: number | null
   created_at: ISODateTime
 }
 
@@ -378,6 +429,14 @@ export interface Attempt {
   word_count: number | null
   words_per_minute: DecimalString | null
   transcription_model: string
+  /** Seconds from the question being shown to the first press on "record" (plain number). */
+  thinking_seconds: number | null
+  /** Her reference at evaluation time (median of previous attempts in the language). */
+  thinking_baseline_seconds: number | null
+  /** How the question was presented for this attempt (null on legacy attempts). */
+  question_mode: QuestionMode | null
+  audio_replays: number
+  text_revealed: boolean
   evaluation: Evaluation | null
   review: Review | null
   level_change: LevelChange | null

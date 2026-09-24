@@ -30,7 +30,9 @@ page.on('console', (m) => {
 })
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('response', (r) => {
-  if (r.status() >= 500) errors.push(`HTTP ${r.status()} ${r.url()}`)
+  // the spoken question may legitimately be unavailable (no TTS key in CI): 503 on /audio/ is fine
+  if (r.status() >= 500 && !(r.status() === 503 && r.url().includes('/audio/')))
+    errors.push(`HTTP ${r.status()} ${r.url()}`)
 })
 
 const shot = async (name) => {
@@ -103,12 +105,31 @@ try {
     }
     await shot('03-session-card')
 
+    step('thinking timer + spoken question (Ler e ouvir)')
+    const timer = page.getByRole('timer', { name: 'Tempo para começar' })
+    if (!(await timer.isVisible().catch(() => false))) errors.push('thinking timer not visible on the card')
+    const modeGroup = page.getByRole('radiogroup', { name: 'Como ver a pergunta' })
+    if (await modeGroup.isVisible().catch(() => false)) {
+      await modeGroup.getByRole('radio', { name: 'Ler e ouvir' }).click()
+      const listen = page.getByRole('button', { name: 'Ouvir pergunta' })
+      await listen.waitFor({ state: 'visible', timeout: 10000 })
+      await listen.click()
+      await page.waitForTimeout(2500)
+      await shot('03b-listen')
+      if ((await page.getByText(/ouviu 1×/).count()) === 0)
+        console.log('   (question audio did not play — TTS unavailable here?)')
+    }
+
     step('record 4 s with the fake microphone')
     await record.click()
     await page.getByRole('button', { name: 'Parar gravação' }).waitFor({ timeout: 20000 })
     await page.waitForTimeout(4000)
     await shot('04-recording')
     await page.getByRole('button', { name: 'Parar gravação' }).click()
+    const frozen = await timer.textContent().catch(() => null)
+    await page.waitForTimeout(700)
+    if (frozen !== null && frozen !== (await timer.textContent().catch(() => null)))
+      errors.push('thinking timer kept running after the record press')
     const send = page.getByRole('button', { name: /Enviar/ })
     await send.waitFor({ state: 'visible', timeout: 5000 })
     await shot('05-preview')
@@ -117,7 +138,17 @@ try {
     step('wait for the evaluation')
     await page.getByRole('region', { name: 'Avaliação' }).waitFor({ state: 'visible', timeout: 90000 })
     await page.waitForTimeout(500)
+    if (
+      !(await page
+        .getByRole('region', { name: 'Tempo para começar' })
+        .isVisible()
+        .catch(() => false))
+    )
+      errors.push('evaluation without the thinking-time summary')
     await shot('06-evaluation')
+    const modeGroupAfter = page.getByRole('radiogroup', { name: 'Como ver a pergunta' })
+    if (await modeGroupAfter.isVisible().catch(() => false))
+      await modeGroupAfter.getByRole('radio', { name: 'Ler', exact: true }).click() // restore the default
 
     step('improved answer on demand')
     const improve = page.getByRole('button', { name: 'Sugestão de resposta melhorada' })
@@ -197,6 +228,10 @@ try {
   await page.goto(`${BASE}/settings`)
   await page.waitForTimeout(1200)
   await shot('15-settings')
+  await page.getByRole('tab', { name: 'IA e custos' }).click()
+  await page.getByText('Custo estimado').waitFor({ timeout: 15000 })
+  await page.waitForTimeout(600)
+  await shot('16-settings-ai')
 } catch (error) {
   errors.push(`script: ${error.message}`)
   await shot('99-failure').catch(() => {})

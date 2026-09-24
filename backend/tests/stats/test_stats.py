@@ -30,6 +30,7 @@ def answer(
     issues=None,
     duration=60,
     insufficient=False,
+    thinking=None,
 ):
     """Create a completed attempt with an evaluation and, if it counts, apply SM-2 + ELO."""
     with owner_context(user.pk):
@@ -46,6 +47,7 @@ def answer(
             transcript_text="x " * 40,
             word_count=40,
             words_per_minute=Decimal("80.0"),
+            thinking_seconds=Decimal(str(thinking)) if thinking is not None else None,
             insufficient_speech=insufficient,
             completed_at=dt.datetime(on.year, on.month, on.day, 12, tzinfo=dt.UTC),
         )
@@ -96,6 +98,7 @@ def dataset(user_a, user_b, make_card, global_categories):
         TODAY - dt.timedelta(days=40),
         (3, 3, 3),
         issues=[{"type": "article", "quote": "a", "correction": "the"}],
+        thinking=9,
     )
     # in the period
     answer(
@@ -107,6 +110,7 @@ def dataset(user_a, user_b, make_card, global_categories):
             {"type": "verb_tense", "quote": "I go", "correction": "I went"},
             {"type": "article", "quote": "a", "correction": "the"},
         ],
+        thinking=5,
     )
     answer(
         user_a,
@@ -114,8 +118,9 @@ def dataset(user_a, user_b, make_card, global_categories):
         TODAY - dt.timedelta(days=3),
         (5, 4, 4),
         issues=[{"type": "verb_tense", "quote": "she go", "correction": "she goes"}],
+        thinking=7,
     )
-    answer(user_a, c3, TODAY, (2, 2, 2))
+    answer(user_a, c3, TODAY, (2, 2, 2), thinking=12)
     answer(user_a, c3, TODAY, (4, 4, 4), counts=False)  # second attempt today: stats only
     answer(user_a, c3, TODAY, (1, 1, 1), insufficient=True)  # excluded from score averages
     # noise for user B
@@ -257,6 +262,21 @@ def test_heatmap_and_advanced(client_a, dataset):
     adv = client_a.get("/api/v1/stats/advanced/").json()
     assert sum(i["count"] for i in adv["intervals"]) == 3
     assert adv["answer_duration"]["attempts"] == 6 and adv["answer_duration"]["avg_seconds"] == 60
+    # thinking time: only attempts with a measured time, inside the default 30-day period
+    tt = adv["thinking_time"]
+    assert tt["attempts"] == 3 and tt["median_seconds"] == 7.0 and tt["avg_seconds"] == 8.0
+    assert [s["date"] for s in tt["series"]] == ["2026-09-06", "2026-09-13", "2026-09-16"]
+    assert tt["series"][-1] == {"date": "2026-09-16", "median_seconds": 12.0, "attempts": 1}
+    wide = client_a.get("/api/v1/stats/advanced/?from=2026-08-01").json()["thinking_time"]
+    assert wide["attempts"] == 4 and wide["median_seconds"] == 8.0
+    travel = client_a.get("/api/v1/stats/advanced/?category=travel").json()["thinking_time"]
+    assert travel["attempts"] == 1 and travel["median_seconds"] == 7.0
+    assert client_a.get("/api/v1/stats/advanced/?language=fr").json()["thinking_time"] == {
+        "avg_seconds": None,
+        "median_seconds": None,
+        "attempts": 0,
+        "series": [],
+    }
 
 
 @time_machine.travel(NOW, tick=False)

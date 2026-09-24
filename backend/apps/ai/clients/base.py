@@ -30,3 +30,13 @@ class TranscriptionResult:
 class ProbeResult:
     duration_seconds: float
     format_name: str = ""
+
+
+@dataclass
+class SpeechResult:
+    audio: bytes
+    model: str
+    voice: str
+    response_format: str = "mp3"
+    characters: int = 0
+    latency_ms: int = 0

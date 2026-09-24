@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import models
 
+from apps.accounts.models import QuestionMode
 from apps.core.languages import LanguageCode
 from apps.core.models import OwnedModel
 from apps.core.storage import attempt_audio_path
@@ -119,6 +120,21 @@ class Attempt(OwnedModel):
     audio_duration_seconds = models.DecimalField(
         max_digits=6, decimal_places=2, null=True, blank=True
     )
+
+    # Thinking time: seconds between the question being shown and the first press on "record",
+    # measured by the client. NULL = not measured (legacy rows, immediate retakes, hidden tab).
+    thinking_seconds = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    # The learner's own reference at evaluation time (median of recent attempts), snapshotted so
+    # the panel and the evaluator prompt agree on what "usual" meant for this attempt.
+    thinking_baseline_seconds = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    # How the question was presented when she answered (NULL = legacy attempt).
+    question_mode = models.CharField(
+        max_length=8, choices=QuestionMode.choices, null=True, blank=True
+    )
+    audio_replays = models.PositiveSmallIntegerField(default=0)
+    text_revealed = models.BooleanField(default=False)
 
     status = models.CharField(
         max_length=14, choices=AttemptStatus.choices, default=AttemptStatus.UPLOADED

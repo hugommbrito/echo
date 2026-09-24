@@ -10,7 +10,7 @@ import datetime as dt
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from statistics import mean
+from statistics import mean, median
 
 from django.db.models import Count, Sum
 
@@ -519,8 +519,48 @@ def heatmap(user, year: int, category: Category | None, language: str | None = N
     ]
 
 
-def advanced(user, language: str | None = None) -> dict:
-    """Ease and interval distributions + answer durations (the collapsed 'Avançado' block)."""
+def thinking_time(period: Period, category: Category | None, language: str | None = None) -> dict:
+    """Thinking time (question shown -> record pressed) over the period: summary + daily medians.
+
+    Only completed attempts with a measured time count (immediate retakes send none).
+    """
+    qs = Attempt.objects.filter(
+        status=AttemptStatus.COMPLETED,
+        thinking_seconds__isnull=False,
+        attempted_on__gte=period.start,
+        attempted_on__lte=period.end,
+    )
+    if category is not None:
+        qs = qs.filter(card__category=category)
+    if language is not None:
+        qs = qs.filter(card__language=language)
+    rows = list(qs.values_list("attempted_on", "thinking_seconds"))
+    values = [value for _, value in rows]
+    by_day: dict[dt.date, list] = defaultdict(list)
+    for day, value in rows:
+        by_day[day].append(value)
+    return {
+        "avg_seconds": _avg(values),
+        "median_seconds": _q2(median(values)) if values else None,
+        "attempts": len(values),
+        "series": [
+            {"date": day, "median_seconds": _q2(median(items)), "attempts": len(items)}
+            for day, items in sorted(by_day.items())
+        ],
+    }
+
+
+def advanced(
+    user,
+    language: str | None = None,
+    *,
+    period: Period | None = None,
+    category: Category | None = None,
+) -> dict:
+    """Ease and interval distributions + answer durations (the collapsed 'Avançado' block).
+
+    The historical blocks stay all-time; `thinking_time` respects the period/category filters.
+    """
     states = active_states(language=language).exclude(maturity=Maturity.NEW)
     ease_buckets = Counter()
     interval_buckets = Counter()
@@ -540,7 +580,7 @@ def advanced(user, language: str | None = None) -> dict:
     if language is not None:
         attempts = attempts.filter(card__language=language)
     durations = list(attempts.values_list("audio_duration_seconds", flat=True))
-    return {
+    result = {
         "ease": [{"ease": k, "count": v} for k, v in sorted(ease_buckets.items())],
         "intervals": [
             {"range": k, "count": interval_buckets.get(k, 0)}
@@ -553,3 +593,6 @@ def advanced(user, language: str | None = None) -> dict:
             "attempts": len(durations),
         },
     }
+    if period is not None:
+        result["thinking_time"] = thinking_time(period, category, language)
+    return result

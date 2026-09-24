@@ -5,6 +5,12 @@ DEBUG = False
 SECRET_KEY = env("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY must be set in production")
+ECHO_FIELD_ENCRYPTION_KEY = env("ECHO_FIELD_ENCRYPTION_KEY")
+if not ECHO_FIELD_ENCRYPTION_KEY:
+    raise RuntimeError(
+        "ECHO_FIELD_ENCRYPTION_KEY must be set in production (per-user API keys are encrypted "
+        "with it; keep the same value on web and worker)"
+    )
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True

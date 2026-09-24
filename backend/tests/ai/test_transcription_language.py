@@ -2,6 +2,7 @@
 
 import pytest
 import time_machine
+from django.conf import settings
 
 from apps.ai.clients.fake import FakeLLM, FakeTranscriber
 from apps.ai.models import AIRequestLog
@@ -45,7 +46,10 @@ def test_french_card_runs_the_pipeline_in_french(
         assert rows == [("transcribe", "fr"), ("evaluate", "fr")]
         from apps.practice.models import Evaluation
 
-        assert Evaluation.objects.get(attempt_id=body["id"]).prompt_version == "v2"
+        assert (
+            Evaluation.objects.get(attempt_id=body["id"]).prompt_version
+            == settings.ECHO_PROMPT_VERSION
+        )
 
     improved = client_a.post(f"/api/v1/attempts/{body['id']}/improved-answer/")
     assert improved.status_code == 200

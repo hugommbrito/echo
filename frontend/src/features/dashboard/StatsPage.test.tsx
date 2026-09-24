@@ -204,6 +204,20 @@ const responses: Record<string, unknown> = {
     },
   ],
   '/stats/heatmap/': [{ date: '2026-09-16', count: 3, speaking_seconds: 180 }],
+  '/stats/advanced/': {
+    ease: [{ ease: '2.5', count: 3 }],
+    intervals: [{ range: '1-7', count: 3 }],
+    answer_duration: { avg_seconds: 60, min_seconds: 30, max_seconds: 90, attempts: 6 },
+    thinking_time: {
+      avg_seconds: 8,
+      median_seconds: 7,
+      attempts: 3,
+      series: [
+        { date: '2026-09-06', median_seconds: 5, attempts: 1 },
+        { date: '2026-09-16', median_seconds: 12, attempts: 1 },
+      ],
+    },
+  },
   '/categories/': [{ id: 'c1', slug: 'travel', name: 'Travel', scope: 'global' }],
 }
 
@@ -280,5 +294,17 @@ describe('StatsPage', () => {
     await waitFor(() =>
       expect(calls.some((c) => c.includes('/stats/scores/') && c.includes('language=fr'))).toBe(true),
     )
+  })
+
+  it('shows the thinking-time block in the advanced section, filtered by the period', async () => {
+    renderPage()
+    await screen.findByText('Evolução do nível')
+    fireEvent.click(screen.getByRole('button', { name: /Avançado/ }))
+    expect(await screen.findByText('Tempo para começar')).toBeInTheDocument()
+    expect(screen.getByText('7,0 s')).toBeInTheDocument()
+    expect(screen.getByText('mediana por dia, no período')).toBeInTheDocument()
+    expect(
+      calls.some((c) => c.includes('/stats/advanced/') && c.includes('from=') && c.includes('to=')),
+    ).toBe(true)
   })
 })

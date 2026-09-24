@@ -111,10 +111,10 @@ export function useHeatmap(year: number, category: string | null, language: stri
   })
 }
 
-export function useAdvanced(enabled: boolean, language: string | null) {
+export function useAdvanced(enabled: boolean, filters: StatsFilters) {
   return useQuery({
-    queryKey: ['stats', 'advanced', language],
-    queryFn: () => getJson<Advanced>('/stats/advanced/', { language }),
+    queryKey: ['stats', 'advanced', filters],
+    queryFn: () => getJson<Advanced>('/stats/advanced/', periodParams(filters)),
     enabled,
     ...common,
   })

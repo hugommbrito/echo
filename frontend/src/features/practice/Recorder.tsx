@@ -1,4 +1,5 @@
 import { Mic, RotateCcw, Send, Square } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -7,7 +8,13 @@ import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/format'
 import { languageMeta } from '@/lib/languages'
 
-import { MAX_SECONDS, MIN_SECONDS, useAudioRecorder, type Recording } from './hooks/useAudioRecorder'
+import {
+  MAX_SECONDS,
+  MIN_SECONDS,
+  useAudioRecorder,
+  type Recording,
+  type RecorderStatus,
+} from './hooks/useAudioRecorder'
 
 export interface RecorderProps {
   onSubmit: (recording: Recording) => void
@@ -16,6 +23,8 @@ export interface RecorderProps {
   disabled?: boolean
   /** Card language → "Responda em francês" above the button. */
   language?: string
+  /** Fired on every status change; `requesting` is the press on the record button. */
+  onStatusChange?: (status: RecorderStatus) => void
 }
 
 export function Recorder({
@@ -24,8 +33,16 @@ export function Recorder({
   submitError,
   disabled = false,
   language,
+  onStatusChange,
 }: RecorderProps) {
   const rec = useAudioRecorder()
+  const onStatusChangeRef = useRef(onStatusChange)
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange
+  }, [onStatusChange])
+  useEffect(() => {
+    onStatusChangeRef.current?.(rec.status)
+  }, [rec.status])
   const isRecording = rec.status === 'recording'
   const isRequesting = rec.status === 'requesting'
   const hasRecording = rec.status === 'stopped' && rec.recording !== null

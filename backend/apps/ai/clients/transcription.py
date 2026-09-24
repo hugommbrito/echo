@@ -9,7 +9,7 @@ import openai
 from django.conf import settings
 
 from apps.ai.clients.base import TranscriptionResult
-from apps.ai.exceptions import TranscriptionError
+from apps.ai.exceptions import AIAuthError, TranscriptionError
 
 
 class OpenAITranscriptionClient:
@@ -44,6 +44,10 @@ class OpenAITranscriptionClient:
                 if verbose:
                     kwargs["temperature"] = 0
                 response = self._client.audio.transcriptions.create(**kwargs)
+        except openai.AuthenticationError as exc:
+            raise AIAuthError(f"OpenAI rejected the API key: {exc.message}") from exc
+        except openai.PermissionDeniedError as exc:
+            raise AIAuthError(f"OpenAI denied access with this API key: {exc.message}") from exc
         except openai.APIStatusError as exc:
             raise TranscriptionError(f"OpenAI API error {exc.status_code}: {exc.message}") from exc
         except openai.APIConnectionError as exc:

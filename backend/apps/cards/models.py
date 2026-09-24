@@ -8,6 +8,7 @@ from django.db.models import Q
 
 from apps.core.languages import LanguageCode
 from apps.core.models import OwnedModel, TimeStampedModel
+from apps.core.storage import card_audio_path
 
 
 class CEFRLevel(models.TextChoices):
@@ -115,6 +116,15 @@ class Card(OwnedModel):
     )
     generation_model = models.CharField(max_length=80, blank=True)
     prompt_version = models.CharField(max_length=20, blank=True)
+
+    # Spoken version of `question_text` (server-side TTS). Empty until synthesised; the card is
+    # fully usable without it.
+    question_audio = models.FileField(upload_to=card_audio_path, max_length=255, blank=True)
+    question_audio_seconds = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    question_audio_model = models.CharField(max_length=60, blank=True)
+    question_audio_voice = models.CharField(max_length=40, blank=True)
 
     class Meta(OwnedModel.Meta):
         ordering = ["-created_at"]

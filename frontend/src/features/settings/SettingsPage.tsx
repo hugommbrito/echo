@@ -12,17 +12,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { QuestionModeSwitch } from '@/components/ui/QuestionModeSwitch'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { plural } from '@/lib/format'
-import type { Category, FeedbackLanguage, User } from '@/types/api'
+import { QUESTION_MODE_DESCRIPTIONS } from '@/lib/labels'
+import type { Category, FeedbackLanguage, QuestionMode, User } from '@/types/api'
 
+import { AIUsageTab } from './AIUsageTab'
 import { LanguagesTab } from './LanguagesTab'
 
-const TABS = ['preferences', 'languages', 'categories'] as const
+const TABS = ['preferences', 'languages', 'categories', 'ai'] as const
 type Tab = (typeof TABS)[number]
 
 function isTab(value: string | null): value is Tab {
@@ -86,19 +89,19 @@ export function SettingsPage() {
           <TabsTrigger value="preferences">Preferências</TabsTrigger>
           <TabsTrigger value="languages">Idiomas</TabsTrigger>
           <TabsTrigger value="categories">Categorias</TabsTrigger>
+          <TabsTrigger value="ai">IA e custos</TabsTrigger>
         </TabsList>
         <TabsContent value="preferences">
-          {me.data ? (
-            <PreferencesForm key={`${me.data.timezone}|${me.data.feedback_language}`} me={me.data} />
-          ) : (
-            <Skeleton className="h-64 w-full" />
-          )}
+          {me.data ? <PreferencesForm me={me.data} /> : <Skeleton className="h-64 w-full" />}
         </TabsContent>
         <TabsContent value="languages">
           <LanguagesTab />
         </TabsContent>
         <TabsContent value="categories">
           <CategoriesSection />
+        </TabsContent>
+        <TabsContent value="ai">
+          <AIUsageTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -111,15 +114,26 @@ function PreferencesForm({ me }: { me: User }) {
   const update = useUpdateMe()
   const [timezone, setTimezone] = useState(me.timezone)
   const [language, setLanguage] = useState<FeedbackLanguage>(me.feedback_language)
+  const [mode, setMode] = useState<QuestionMode>(me.question_mode)
+  const [showTimer, setShowTimer] = useState(me.show_thinking_timer)
   const [saved, setSaved] = useState(false)
 
-  const dirty = timezone !== me.timezone || language !== me.feedback_language
+  const dirty =
+    timezone !== me.timezone ||
+    language !== me.feedback_language ||
+    mode !== me.question_mode ||
+    showTimer !== me.show_thinking_timer
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSaved(false)
     update.mutate(
-      { timezone: timezone.trim(), feedback_language: language },
+      {
+        timezone: timezone.trim(),
+        feedback_language: language,
+        question_mode: mode,
+        show_thinking_timer: showTimer,
+      },
       { onSuccess: () => setSaved(true) },
     )
   }
@@ -129,8 +143,9 @@ function PreferencesForm({ me }: { me: User }) {
       <CardHeader>
         <CardTitle>Preferências</CardTitle>
         <CardDescription>
-          Fuso horário define o "dia" das sessões; o idioma do feedback vale para todas as línguas que você
-          pratica. As perguntas novas por dia ficam na aba Idiomas.
+          Fuso horário define o "dia" das sessões; o idioma do feedback, a forma de ver a pergunta e o
+          cronômetro valem para todas as línguas que você pratica. As perguntas novas por dia ficam na aba
+          Idiomas.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -172,6 +187,25 @@ function PreferencesForm({ me }: { me: User }) {
                 <option value="en">English</option>
               </Select>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label id="question-mode-label">Como ver a pergunta</Label>
+            <QuestionModeSwitch aria-label="Como ver a pergunta" value={mode} onChange={setMode} />
+            <p className="text-xs text-fg-muted">
+              {QUESTION_MODE_DESCRIPTIONS[mode]} Dá para trocar também no cabeçalho da sessão.
+            </p>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="show-thinking-timer">Mostrar cronômetro de tempo para começar</Label>
+              <p className="text-xs text-fg-muted">
+                Mede quanto tempo você leva para começar a responder, comparado com a sua própria referência.
+                Mesmo escondido, o resultado aparece na avaliação.
+              </p>
+            </div>
+            <Switch id="show-thinking-timer" checked={showTimer} onCheckedChange={setShowTimer} />
           </div>
 
           {update.isError && !isApiError(update.error) ? (

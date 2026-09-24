@@ -1,4 +1,4 @@
-import { History } from 'lucide-react'
+import { History, Timer } from 'lucide-react'
 
 import { useCardHistory } from '@/api/cards'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -6,10 +6,12 @@ import { AudioPlayer } from '@/components/ui/AudioPlayer'
 import { Badge } from '@/components/ui/badge'
 import { ScorePill } from '@/components/ui/ScorePill'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/cn'
 import { AXES } from '@/lib/colors'
-import { formatDateShort, formatDecimal, formatDuration } from '@/lib/format'
-import { ATTEMPT_STATUS_LABELS } from '@/lib/labels'
+import { formatDateShort, formatDecimal, formatDuration, formatSeconds } from '@/lib/format'
+import { ATTEMPT_STATUS_LABELS, QUESTION_MODE_LABELS } from '@/lib/labels'
 import { languageMeta } from '@/lib/languages'
+import { ZONE_COLORS, ZONE_LABELS, toSeconds, zoneFor } from '@/lib/thinkingTime'
 import type { Attempt } from '@/types/api'
 
 export interface AttemptHistoryProps {
@@ -65,6 +67,8 @@ export function AttemptHistory({
 function AttemptRow({ attempt }: { attempt: Attempt }) {
   const evaluation = attempt.evaluation
   const showScores = attempt.status === 'completed' && !attempt.insufficient_speech && evaluation
+  const thinking = toSeconds(attempt.thinking_seconds)
+  const zone = thinking != null ? zoneFor(thinking, toSeconds(attempt.thinking_baseline_seconds)) : null
   return (
     <li>
       <details className="group/row">
@@ -89,8 +93,19 @@ function AttemptRow({ attempt }: { attempt: Attempt }) {
           !attempt.insufficient_speech ? (
             <Badge variant="outline">não conta</Badge>
           ) : null}
-          <span className="ml-auto text-xs text-fg-muted tabular">
-            {attempt.audio_duration_seconds ? formatDuration(attempt.audio_duration_seconds) : ''}
+          <span className="ml-auto flex items-center gap-2 text-xs text-fg-muted tabular">
+            {thinking != null ? (
+              <span
+                title="Tempo para começar"
+                className={cn('inline-flex items-center gap-1', zone && ZONE_COLORS[zone].text)}
+              >
+                <Timer className="size-3" aria-hidden="true" />
+                {formatSeconds(thinking)}
+              </span>
+            ) : null}
+            {attempt.audio_duration_seconds ? (
+              <span>{formatDuration(attempt.audio_duration_seconds)}</span>
+            ) : null}
           </span>
         </summary>
         <div className="space-y-3 px-5 pb-4">
@@ -110,6 +125,24 @@ function AttemptRow({ attempt }: { attempt: Attempt }) {
           {showScores ? (
             <p className="text-xs text-fg-muted tabular">
               Composta {formatDecimal(evaluation.composite_score, 2)}
+            </p>
+          ) : null}
+          {thinking != null || attempt.question_mode ? (
+            <p className="text-xs text-fg-muted tabular">
+              {thinking != null
+                ? `Tempo para começar ${formatSeconds(thinking, 1)}${
+                    attempt.thinking_baseline_seconds != null
+                      ? ` · referência ${formatSeconds(attempt.thinking_baseline_seconds)}`
+                      : ''
+                  }${zone ? ` · ${ZONE_LABELS[zone]}` : ''}`
+                : 'Tempo para começar não medido (nova tentativa)'}
+              {attempt.question_mode ? ` · modo: ${QUESTION_MODE_LABELS[attempt.question_mode]}` : ''}
+              {attempt.question_mode && attempt.question_mode !== 'read'
+                ? ` · ${attempt.audio_replays > 0 ? `ouviu ${attempt.audio_replays}×` : 'não ouviu o áudio'}`
+                : ''}
+              {attempt.question_mode === 'listen'
+                ? ` · ${attempt.text_revealed ? 'texto revelado' : 'só de ouvido'}`
+                : ''}
             </p>
           ) : null}
         </div>

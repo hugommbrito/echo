@@ -170,15 +170,13 @@ def make_card(db):
 
 @pytest.fixture(autouse=True)
 def _reset_fakes():
-    from apps.ai.clients.fake import FakeLLM, FakeProbe, FakeTranscriber
+    from apps.ai.clients.fake import FakeLLM, FakeProbe, FakeTranscriber, FakeTTS
 
-    FakeLLM.reset()
-    FakeTranscriber.reset()
-    FakeProbe.reset()
+    for fake in (FakeLLM, FakeTranscriber, FakeProbe, FakeTTS):
+        fake.reset()
     yield
-    FakeLLM.reset()
-    FakeTranscriber.reset()
-    FakeProbe.reset()
+    for fake in (FakeLLM, FakeTranscriber, FakeProbe, FakeTTS):
+        fake.reset()
 
 
 @pytest.fixture

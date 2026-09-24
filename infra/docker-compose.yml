@@ -42,6 +42,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ECHO_AI_PROVIDER: ${ECHO_AI_PROVIDER:-fake}
+      ECHO_FIELD_ENCRYPTION_KEY: ${ECHO_FIELD_ENCRYPTION_KEY:-} # empty: dev derives it from SECRET_KEY
+      ECHO_TTS_VOICE_EN: ${ECHO_TTS_VOICE_EN:-marin}
+      ECHO_TTS_VOICE_FR: ${ECHO_TTS_VOICE_FR:-cedar}
       SECRET_KEY: dev-insecure-secret-key
     volumes:
       - ../backend:/app/backend

@@ -257,7 +257,7 @@ export function StatsPage() {
 
       <CategoryTable rows={categories.data ?? []} colors={colors} loading={categories.isFetching} />
 
-      <AdvancedSection colors={colors} language={language} />
+      <AdvancedSection colors={colors} filters={filters} />
     </div>
   )
 }

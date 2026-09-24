@@ -3,8 +3,9 @@ import { ChevronDown } from 'lucide-react'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { TooltipFrame } from './ChartCard'
 import { gapRect } from './shapes'
-import { fmtInt } from './format'
-import { useAdvanced } from './api'
+import { fmtInt, fmtSeconds } from './format'
+import { useAdvanced, type StatsFilters } from './api'
+import { Sparkline } from './Sparkline'
 import type { ChartColors } from './useChartColors'
 
 function CountTooltip({
@@ -68,9 +69,10 @@ function SmallBars({
   )
 }
 
-export function AdvancedSection({ colors, language }: { colors: ChartColors; language: string | null }) {
+export function AdvancedSection({ colors, filters }: { colors: ChartColors; filters: StatsFilters }) {
   const [open, setOpen] = useState(false)
-  const { data } = useAdvanced(open, language)
+  const { data } = useAdvanced(open, filters)
+  const thinking = data?.thinking_time ?? null
   return (
     <section className="rounded-2xl border border-border bg-surface shadow-sm">
       <button
@@ -82,7 +84,7 @@ export function AdvancedSection({ colors, language }: { colors: ChartColors; lan
         <span>
           <span className="block text-base font-semibold text-fg">Avançado</span>
           <span className="block text-sm text-fg-muted">
-            Facilidade (ease), intervalos e duração das respostas
+            Facilidade (ease), intervalos, duração das respostas e tempo para começar
           </span>
         </span>
         <ChevronDown
@@ -91,7 +93,7 @@ export function AdvancedSection({ colors, language }: { colors: ChartColors; lan
         />
       </button>
       {open ? (
-        <div className="grid gap-6 border-t border-border p-5 md:grid-cols-3">
+        <div className="grid gap-6 border-t border-border p-5 md:grid-cols-2 xl:grid-cols-4">
           {data ? (
             <>
               <SmallBars title="Distribuição de facilidade" data={data.ease} xKey="ease" colors={colors} />
@@ -102,9 +104,7 @@ export function AdvancedSection({ colors, language }: { colors: ChartColors; lan
                   <div>
                     <dt className="text-fg-muted">média</dt>
                     <dd className="text-2xl font-semibold text-fg">
-                      {data.answer_duration.avg_seconds != null
-                        ? `${data.answer_duration.avg_seconds}s`
-                        : '–'}
+                      {fmtSeconds(data.answer_duration.avg_seconds)}
                     </dd>
                   </div>
                   <div>
@@ -115,21 +115,49 @@ export function AdvancedSection({ colors, language }: { colors: ChartColors; lan
                   </div>
                   <div>
                     <dt className="text-fg-muted">mínima</dt>
-                    <dd className="text-fg">
-                      {data.answer_duration.min_seconds != null
-                        ? `${data.answer_duration.min_seconds}s`
-                        : '–'}
-                    </dd>
+                    <dd className="text-fg">{fmtSeconds(data.answer_duration.min_seconds)}</dd>
                   </div>
                   <div>
                     <dt className="text-fg-muted">máxima</dt>
-                    <dd className="text-fg">
-                      {data.answer_duration.max_seconds != null
-                        ? `${data.answer_duration.max_seconds}s`
-                        : '–'}
-                    </dd>
+                    <dd className="text-fg">{fmtSeconds(data.answer_duration.max_seconds)}</dd>
                   </div>
                 </dl>
+              </div>
+              <div>
+                <p className="mb-1 text-sm font-medium text-fg">Tempo para começar</p>
+                {thinking && thinking.attempts > 0 ? (
+                  <>
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-fg-muted">mediana</dt>
+                        <dd className="text-2xl font-semibold text-fg">
+                          {fmtSeconds(thinking.median_seconds, 1)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-fg-muted">respostas</dt>
+                        <dd className="text-2xl font-semibold text-fg">{fmtInt(thinking.attempts)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-fg-muted">média</dt>
+                        <dd className="text-fg">{fmtSeconds(thinking.avg_seconds, 1)}</dd>
+                      </div>
+                    </dl>
+                    {thinking.series.length >= 2 ? (
+                      <div className="mt-3">
+                        <Sparkline
+                          values={thinking.series.map((s) => s.median_seconds)}
+                          color={colors.mature}
+                          width={160}
+                          height={32}
+                        />
+                        <p className="text-xs text-fg-muted">mediana por dia, no período</p>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-fg-muted">Ainda sem dados.</p>
+                )}
               </div>
             </>
           ) : (

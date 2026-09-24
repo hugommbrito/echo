@@ -854,3 +854,29 @@ Implementado depois da fase 7. Plano detalhado em `~/.claude/plans/vamos-deixar-
 
 ### 15.7 Fora do escopo
 Interface em outro idioma; nomes de categorias traduzidos; feedback por idioma praticado; reabrir a sessão ao retomar um idioma pausado no mesmo dia; Glicko; otimizações operacionais (A/B de transcrição, calibração, backups).
+
+## 16. Adendo (2026-09-24): ouvir a pergunta, tempo de pensamento e chaves de IA por usuário
+
+### 16.1 Decisões de produto (2026-09-23)
+- **Pergunta falada (TTS)**: OpenAI `gpt-4o-mini-tts` no servidor, lendo só `question_text` (o cenário continua em texto). Áudio gerado pelo worker quando o card nasce (`cards.synthesize_question_audio`), guardado em `users/{user}/cards/{card}.mp3` e exposto em `Card.question_audio_url`; `GET /cards/{id}/audio/` sintetiza sob demanda e redireciona (fallback para cards antigos e URLs assinadas expiradas). Sem autoplay: botão "Ouvir pergunta", repetições ilimitadas e contadas, pill 0,8×. Modos `read | listen | both` (`User.question_mode`, global, com atalho no cabeçalho da sessão). No modo `listen` o texto fica fora do DOM até "Mostrar texto" (registrado em `Attempt.text_revealed`).
+- **Tempo de pensamento**: medido no cliente da exibição da pergunta (montagem do `CardRunner`) ao primeiro toque em "Gravar" (`Attempt.thinking_seconds`; "Regravar" não reinicia; "Tentar de novo" e aba oculta enviam nulo). Referência = mediana das últimas 20 tentativas dela no idioma (`ECHO_THINKING_BASELINE_WINDOW`), default 6 s até 5 amostras; zonas verde ≤ 1×, amarelo ≤ 1,5×, vermelho acima, sem piso. Snapshot da referência em `Attempt.thinking_baseline_seconds` no `stage_evaluate`. **Fora** da nota composta, do SM-2 e do ELO; entra no prompt de avaliação como pista fraca (prompts **v3**, uma frase na dimensão de fluência + uma linha no user message quando medido). Timer ao vivo opcional (`User.show_thinking_timer`), indicador no painel de avaliação, no histórico e em `GET /stats/advanced/` (`thinking_time`, respeita período/categoria/idioma).
+- **Chaves de IA por usuário (BYOK)**: `User.anthropic_api_key` / `User.openai_api_key` cifradas com Fernet (`ECHO_FIELD_ENCRYPTION_KEY`, obrigatória em prod, derivada de `SECRET_KEY` em dev), cadastradas **só pelo admin** (form write-only, nunca reexibidas). Roteamento em `apps/ai/routing.py`: sem chave própria → globais; só OpenAI própria → tudo na OpenAI dela (novo `OpenAILLMClient`, Responses API com structured outputs, modelos `ECHO_MODELS["openai"]`); só Anthropic própria → texto nela, fala na OpenAI global; ambas → ambas dela. `AIRequestLog.key_source` (`user|global`), redação de segredos em mensagens de erro, `GET /me/` expõe `ai` (status por provedor, sem a chave) e `GET /me/ai-usage/` o custo estimado; aba "IA e custos" read-only em Configurações.
+
+### 16.2 Parâmetros novos (`backend/config/settings/base.py`)
+| Parâmetro | Valor | Observação |
+|---|---|---|
+| `ECHO_TTS_MODEL` / `ECHO_TTS_FORMAT` / `ECHO_TTS_TIMEOUT_SECONDS` | `gpt-4o-mini-tts` / `mp3` / 30 | `instructions` só neste modelo |
+| `ECHO_TTS_VOICES` | en `marin`, fr `cedar` | auditar com `synthesize_card_audio --sync --limit 1 --language fr` |
+| `ECHO_TTS_INSTRUCTIONS` | sotaque/ritmo por idioma | francês pede pronúncia do Québec (melhor esforço) |
+| `ECHO_THINKING_BASELINE_WINDOW` / `_MIN_SAMPLES` / `_DEFAULT_BASELINE_SECONDS` / `_MAX_SECONDS` / `_YELLOW_RATIO` | 20 / 5 / 6 / 900 / 1,5 | |
+| `ECHO_MODELS["openai"]` | avaliação `gpt-6-astra`, geração e resposta melhorada `gpt-6-sol` | ~2× o custo do Opus por avaliação; `gpt-6-sol` custa 1/5 |
+| `ECHO_PROMPT_VERSION` | `v3` | v2 mantido para comparação |
+| `ECHO_FIELD_ENCRYPTION_KEY` | env (Fernet; várias separadas por vírgula para rotação) | perder = perder as chaves cadastradas |
+
+Custos verificados em 2026-09-23: `gpt-4o-mini-tts` ≈ US$ 0,015/min (< US$ 0,003 por pergunta); `gpt-6-astra` 10/1/50, `gpt-6-sol` 2/0,20/10, `gpt-5-mini` 0,25/0,025/2 (US$ por 1M tokens: entrada/cache/saída).
+
+### 16.3 API e rotas
+`GET/PATCH /me/` += `question_mode`, `show_thinking_timer`, `languages[].thinking_time {baseline_seconds, samples, is_default}`, `ai {llm_provider, speech_available, anthropic{configured,hint,source}, openai{…}}`. `Card` += `question_audio_url`, `question_audio_seconds`. `POST /attempts/` += `thinking_seconds`, `question_mode`, `audio_replays`, `text_revealed`; `Attempt` += os mesmos + `thinking_baseline_seconds` (números JSON). Novas rotas `GET /cards/{id}/audio/` e `GET /me/ai-usage/` (38 rotas). `GET /stats/advanced/` aceita `from/to/category`.
+
+### 16.4 Fora do escopo
+Cadastro de chaves pelo próprio usuário e auto-cadastro; botão "testar chave"; preferência explícita de provedor para quem tem ambas as chaves; TTS de feedback ou resposta melhorada; vozes por usuário.

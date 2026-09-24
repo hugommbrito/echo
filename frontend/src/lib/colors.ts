@@ -17,7 +17,7 @@ export interface ColorToken {
   border: string
 }
 
-function token(variable: `--${string}`, label: string, tw: string): ColorToken {
+export function token(variable: `--${string}`, label: string, tw: string): ColorToken {
   return {
     variable,
     css: `var(${variable})`,

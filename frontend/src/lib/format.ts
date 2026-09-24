@@ -90,6 +90,28 @@ export function formatDuration(seconds: number | string | null | undefined): str
   return `${minutes}:${rest.toString().padStart(2, '0')}`
 }
 
+/** Seconds → "7 s" / "12,5 s"; null → "—". */
+export function formatSeconds(value: number | string | null | undefined, digits = 0): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const n = typeof value === 'string' ? Number(value) : value
+  if (!Number.isFinite(n)) return '—'
+  return `${n.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits })} s`
+}
+
+const USD = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+})
+
+/** `0.1234` → "US$ 0,1234"; `12` → "US$ 12,00". */
+export function formatUsd(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const n = typeof value === 'string' ? Number(value) : value
+  return Number.isFinite(n) ? USD.format(n) : '—'
+}
+
 /** "dia" / "dias" */
 export function pluralDays(n: number): string {
   return n === 1 ? '1 dia' : `${formatNumber(n)} dias`

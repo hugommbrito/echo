@@ -19,8 +19,9 @@ from django.utils import timezone
 from apps.accounts.models import LanguageProfile
 from apps.ai import services as ai_services
 from apps.ai.clients import get_prober
-from apps.ai.exceptions import AIError, AudioProbeError, TranscriptionError
+from apps.ai.exceptions import AIError, AudioProbeError
 from apps.leveling.services import apply_level_result
+from apps.practice import thinking_time
 from apps.practice.models import Attempt, AttemptStatus, Evaluation
 from apps.practice.services import refresh_status
 from apps.scheduling import sm2
@@ -66,7 +67,7 @@ def _set_status(attempt: Attempt, status: str) -> None:
 def _fail(attempt: Attempt, stage: str, message: str) -> None:
     attempt.status = AttemptStatus.FAILED
     attempt.failure_stage = stage
-    attempt.error_message = message[:2000]
+    attempt.error_message = ai_services.redact(message)[:2000]
     attempt.save(update_fields=["status", "failure_stage", "error_message", "updated_at"])
     log.warning("attempt %s failed at %s: %s", attempt.id, stage, message)
 
@@ -134,7 +135,7 @@ def stage_transcribe(attempt: Attempt, path: Path) -> None:
             language=attempt.card.language,
             related=attempt,
         )
-    except TranscriptionError as exc:
+    except AIError as exc:  # transcription, auth and configuration errors alike
         raise StageError("transcribing", str(exc)) from exc
     words = len(result.text.split())
     duration = float(attempt.audio_duration_seconds or 0) or (result.duration_seconds or 0)
@@ -156,9 +157,21 @@ def stage_transcribe(attempt: Attempt, path: Path) -> None:
     )
 
 
+def _snapshot_thinking_baseline(attempt: Attempt) -> None:
+    """Freeze the learner's reference for this attempt (idempotent on retry)."""
+    if attempt.thinking_seconds is None or attempt.thinking_baseline_seconds is not None:
+        return
+    baseline = thinking_time.baseline_for_language(
+        attempt.user, attempt.card.language, exclude_attempt_id=attempt.pk
+    )
+    attempt.thinking_baseline_seconds = baseline.baseline_seconds
+    attempt.save(update_fields=["thinking_baseline_seconds", "updated_at"])
+
+
 def stage_evaluate(attempt: Attempt) -> None:
     _set_status(attempt, AttemptStatus.EVALUATING)
     user = attempt.user
+    _snapshot_thinking_baseline(attempt)
     word_count = attempt.word_count or 0
     if word_count < settings.ECHO_MIN_WORDS_FOR_EVALUATION:
         note = INSUFFICIENT_SPEECH_FEEDBACK.get(
@@ -195,6 +208,14 @@ def stage_evaluate(attempt: Attempt) -> None:
             duration_seconds=float(attempt.audio_duration_seconds or 0),
             word_count=word_count,
             words_per_minute=float(attempt.words_per_minute or 0),
+            thinking_seconds=(
+                float(attempt.thinking_seconds) if attempt.thinking_seconds is not None else None
+            ),
+            thinking_baseline_seconds=(
+                float(attempt.thinking_baseline_seconds)
+                if attempt.thinking_baseline_seconds is not None
+                else None
+            ),
             related=attempt,
         )
     except AIError as exc:

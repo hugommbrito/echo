@@ -6,7 +6,7 @@ import time_machine
 
 from apps.accounts.models import LanguageProfile
 from apps.ai.clients.fake import FakeLLM, FakeProbe, FakeTranscriber
-from apps.ai.exceptions import TranscriptionError
+from apps.ai.exceptions import AIError, TranscriptionError
 from apps.ai.models import AIRequestLog
 from apps.core.context import owner_context
 from apps.leveling.models import LevelLog
@@ -310,3 +310,124 @@ def test_attempts_are_isolated(client_a, client_b, user_a, make_card, audio_file
     assert (
         audio.status_code == 302 and f"users/{user_a.id}/attempts/{attempt_id}" in audio["Location"]
     )
+
+
+# --- Thinking time & presentation telemetry --------------------------------------------------
+
+
+@time_machine.travel(NOON_UTC, tick=False)
+def test_thinking_time_and_presentation_are_recorded_and_fed_to_the_evaluator(
+    client_a, user_a, make_card, audio_file
+):
+    card = make_card(user_a)
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    accepted = _upload(
+        client_a,
+        card,
+        audio_file(),
+        thinking_seconds="7.5",
+        question_mode="listen",
+        audio_replays="2",
+        text_revealed="true",
+    )
+    assert accepted.status_code == 202, accepted.content
+    body = client_a.get(f"/api/v1/attempts/{accepted.json()['id']}/").json()
+    assert body["status"] == "completed"
+    assert body["thinking_seconds"] == 7.5 and body["thinking_baseline_seconds"] == 6.0  # numbers
+    assert body["question_mode"] == "listen"
+    assert body["audio_replays"] == 2 and body["text_revealed"] is True
+    evaluate_call = [c for c in FakeLLM.calls if c["output_format"] == "EvaluationOutput"][-1]
+    assert (
+        "Thinking time before recording: 8 s (the learner's own recent median: 6 s — "
+        "somewhat slower than usual)." in evaluate_call["user"]
+    )
+    profile = client_a.get("/api/v1/me/").json()["languages"][0]
+    assert profile["thinking_time"] == {"baseline_seconds": 6.0, "samples": 1, "is_default": True}
+
+
+@time_machine.travel(NOON_UTC, tick=False)
+def test_thinking_time_defaults_validation_and_clamping(client_a, user_a, make_card, audio_file):
+    card = make_card(user_a)
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    body = client_a.get(
+        f"/api/v1/attempts/{_upload(client_a, card, audio_file()).json()['id']}/"
+    ).json()
+    assert body["thinking_seconds"] is None and body["thinking_baseline_seconds"] is None
+    assert body["question_mode"] == "read"  # snapshot of the user's preference
+    assert body["audio_replays"] == 0 and body["text_revealed"] is False
+    evaluate_call = [c for c in FakeLLM.calls if c["output_format"] == "EvaluationOutput"][-1]
+    assert "Thinking time" not in evaluate_call["user"]
+
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    clamped = client_a.get(
+        f"/api/v1/attempts/{_upload(client_a, card, audio_file(), thinking_seconds='5000').json()['id']}/"
+    ).json()
+    assert clamped["thinking_seconds"] == 900.0
+    assert _upload(client_a, card, audio_file(), thinking_seconds="-1").status_code == 400
+    assert _upload(client_a, card, audio_file(), question_mode="loud").status_code == 400
+
+
+@time_machine.travel(NOON_UTC, tick=False)
+def test_thinking_baseline_uses_the_learners_own_history(
+    client_a, user_a, make_card, audio_file, settings
+):
+    settings.ECHO_THINKING_BASELINE_MIN_SAMPLES = 2
+    card = make_card(user_a)
+    for seconds in ("4", "10"):
+        FakeTranscriber.queue(GOOD_TRANSCRIPT)
+        _upload(client_a, card, audio_file(), thinking_seconds=seconds)
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    third = client_a.get(
+        f"/api/v1/attempts/{_upload(client_a, card, audio_file(), thinking_seconds='3').json()['id']}/"
+    ).json()
+    assert third["thinking_baseline_seconds"] == 7.0  # median of the previous two, not of itself
+    profile = client_a.get("/api/v1/me/").json()["languages"][0]["thinking_time"]
+    assert profile == {"baseline_seconds": 4.0, "samples": 3, "is_default": False}
+
+
+# --- Bring your own key --------------------------------------------------------------------------
+
+
+@time_machine.travel(NOON_UTC, tick=False)
+def test_key_source_follows_the_users_own_keys(client_a, user_a, make_card, audio_file):
+    card = make_card(user_a)
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    _upload(client_a, card, audio_file())
+    with owner_context(user_a.pk):
+        assert set(AIRequestLog.objects.values_list("key_source", flat=True)) == {"global"}
+        AIRequestLog.objects.all().delete()
+
+    user_a.openai_api_key = "sk-proj-ownkey1234567890"
+    user_a.save()
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    attempt_id = _upload(client_a, card, audio_file()).json()["id"]
+    client_a.post(f"/api/v1/attempts/{attempt_id}/improved-answer/")
+    with owner_context(user_a.pk):
+        rows = list(AIRequestLog.objects.order_by("created_at").values_list("kind", "key_source"))
+    assert rows == [("transcribe", "user"), ("evaluate", "user"), ("improve_answer", "user")]
+
+    user_a.openai_api_key = ""
+    user_a.anthropic_api_key = "sk-ant-api03-ownkey1234567890"
+    user_a.save()
+    with owner_context(user_a.pk):
+        AIRequestLog.objects.all().delete()
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    _upload(client_a, card, audio_file())
+    with owner_context(user_a.pk):
+        rows = list(AIRequestLog.objects.order_by("created_at").values_list("kind", "key_source"))
+    assert rows == [("transcribe", "global"), ("evaluate", "user")]  # speech on the global key
+
+
+@time_machine.travel(NOON_UTC, tick=False)
+def test_provider_errors_never_persist_api_keys(client_a, user_a, make_card, audio_file):
+    card = make_card(user_a)
+    FakeTranscriber.queue(GOOD_TRANSCRIPT)
+    FakeLLM.fail_next = AIError("401 invalid key sk-ant-api03-leakedsecret9999 rejected")
+    body = client_a.get(
+        f"/api/v1/attempts/{_upload(client_a, card, audio_file()).json()['id']}/"
+    ).json()
+    assert body["status"] == "failed" and body["failure_stage"] == "evaluating"
+    assert "leakedsecret" not in body["error_message"] and "sk-…" in body["error_message"]
+    with owner_context(user_a.pk):
+        error = AIRequestLog.objects.get(kind="evaluate", status="error").error
+    assert "leakedsecret" not in error and "sk-…" in error

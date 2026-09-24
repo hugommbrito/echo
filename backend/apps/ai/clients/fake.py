@@ -14,7 +14,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from apps.ai.clients.base import LLMResult, ProbeResult, TranscriptionResult
+from apps.ai.clients.base import LLMResult, ProbeResult, SpeechResult, TranscriptionResult
 from apps.ai.exceptions import AudioProbeError
 from apps.ai.schemas import (
     DimensionScore,
@@ -350,3 +350,55 @@ class FakeProbe:
         if Path(path).stat().st_size == 0:
             raise AudioProbeError("Audio file is empty.")
         return ProbeResult(duration_seconds=self.default_duration, format_name="fake")
+
+
+class FakeTTS:
+    provider = "fake"
+    _queued: deque[bytes] = deque()
+    calls: list[dict] = []
+    fail_next: Exception | None = None
+
+    @classmethod
+    def queue(cls, data: bytes) -> None:
+        cls._queued.append(data)
+
+    @classmethod
+    def reset(cls) -> None:
+        cls._queued.clear()
+        cls.calls.clear()
+        cls.fail_next = None
+
+    def synthesize(
+        self,
+        text,
+        *,
+        model,
+        voice,
+        instructions=None,
+        response_format="mp3",
+        timeout=None,
+    ) -> SpeechResult:
+        FakeTTS.calls.append(
+            {
+                "text": text,
+                "model": model,
+                "voice": voice,
+                "instructions": instructions,
+                "response_format": response_format,
+            }
+        )
+        if FakeTTS.fail_next is not None:
+            exc, FakeTTS.fail_next = FakeTTS.fail_next, None
+            raise exc
+        if FakeTTS._queued:
+            audio = FakeTTS._queued.popleft()
+        else:  # deterministic, non-empty bytes (the probe rejects empty files)
+            audio = b"ID3" + hashlib.md5(text.encode("utf-8")).digest() * 32
+        return SpeechResult(
+            audio=audio,
+            model=model,
+            voice=voice,
+            response_format=response_format,
+            characters=len(text),
+            latency_ms=2,
+        )

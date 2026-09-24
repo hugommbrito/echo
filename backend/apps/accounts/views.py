@@ -14,12 +14,14 @@ from apps.accounts import services
 from apps.accounts.models import LanguageProfile
 from apps.accounts.scoping import OwnedQuerySetMixin
 from apps.accounts.serializers import (
+    AIUsageSerializer,
     LanguageActivateSerializer,
     LanguageCatalogSerializer,
     LanguageProfileSerializer,
     LoginSerializer,
     UserSerializer,
 )
+from apps.ai.usage import ai_usage
 from apps.core.languages import LANGUAGES
 
 
@@ -74,6 +76,14 @@ class MeView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class MeAIUsageView(APIView):
+    """Estimated AI spend of the current user: this month, all time, and by key origin."""
+
+    @extend_schema(responses=AIUsageSerializer)
+    def get(self, request):
+        return Response(AIUsageSerializer(ai_usage(request.user)).data)
 
 
 class LanguageCatalogView(APIView):

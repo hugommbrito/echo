@@ -123,6 +123,13 @@ export type CategoryRow = {
 
 export type HeatmapCell = { date: string; count: number; speaking_seconds: number }
 
+export type ThinkingTimeStats = {
+  avg_seconds: number | null
+  median_seconds: number | null
+  attempts: number
+  series: { date: string; median_seconds: number | null; attempts: number }[]
+}
+
 export type Advanced = {
   ease: { ease: string; count: number }[]
   intervals: { range: string; count: number }[]
@@ -132,6 +139,8 @@ export type Advanced = {
     max_seconds: number | null
     attempts: number
   }
+  /** Respects the period/category/language filters (the other blocks are all-time). */
+  thinking_time?: ThinkingTimeStats | null
 }
 
 export type CategoryOption = { id: string; slug: string; name: string; scope: 'global' | 'personal' }

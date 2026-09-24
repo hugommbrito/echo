@@ -30,3 +30,9 @@ def extension_for(mime_type: str | None, filename: str | None = None) -> str:
 def attempt_audio_path(instance, filename: str) -> str:
     ext = extension_for(getattr(instance, "audio_mime", None), filename)
     return f"users/{instance.user_id}/attempts/{instance.id}.{ext}"
+
+
+def card_audio_path(instance, filename: str) -> str:
+    """Spoken question (TTS) of a card, next to the user's attempt recordings."""
+    ext = pathlib.PurePosixPath(filename).suffix.lstrip(".").lower() or "mp3"
+    return f"users/{instance.user_id}/cards/{instance.id}.{ext}"

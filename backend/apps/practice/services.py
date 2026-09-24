@@ -22,8 +22,10 @@ from apps.accounts import services as account_services
 from apps.ai import services as ai_services
 from apps.ai.exceptions import AIError
 from apps.cards.models import Card, CardSource, CardStatus, Category
+from apps.cards.tasks import synthesize_question_audio
 from apps.core.exceptions import ConflictError
 from apps.core.languages import get_language, is_known_language
+from apps.core.tasks import enqueue
 from apps.leveling.elo import band_for_rating, rating_for_level
 from apps.leveling.probes import plan_slots, probe_count
 from apps.practice import queue
@@ -402,6 +404,8 @@ def _generate_for_plan(
                 position=position,
                 origin=NewCardOrigin.GENERATED,
             )
+            # Spoken question, generated off the request path; the card works without it.
+            enqueue(synthesize_question_audio, card_id=str(card.id), user_id=str(user.id))
             created.append(card)
         if not created:
             plan.generation_status = PlanStatus.FAILED
@@ -419,7 +423,6 @@ def _generate_for_plan(
 def retry_generation(session: DailySession) -> DailySession:
     if session.status != SessionStatus.FAILED:
         raise ConflictError("Only failed sessions can be retried.", code="not_failed")
-    from apps.core.tasks import enqueue
     from apps.practice.tasks import generate_session_cards
 
     session.plans.filter(generation_status=PlanStatus.FAILED).update(

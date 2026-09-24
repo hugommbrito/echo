@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.db.models import Count, Q
+from django.http import HttpResponseRedirect
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -6,8 +8,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.accounts.scoping import OwnedQuerySetMixin
+from apps.ai import services as ai_services
+from apps.ai.exceptions import AIError
 from apps.cards.models import Card, CardStatus, Category
 from apps.cards.serializers import CardDetailSerializer, CardSerializer, CategorySerializer
+from apps.core.exceptions import ServiceUnavailable
 from apps.core.languages import language_codes
 
 
@@ -107,6 +112,30 @@ class CardViewSet(OwnedQuerySetMixin, viewsets.ReadOnlyModelViewSet):
         card.status = CardStatus.ACTIVE
         card.save(update_fields=["status", "updated_at"])
         return Response(CardDetailSerializer(card, context={"request": request}).data)
+
+    @extend_schema(request=None, responses={302: None, 503: None})
+    @action(detail=True, methods=["get"])
+    def audio(self, request, pk=None):
+        """Redirect to the spoken question, synthesising it first when missing.
+
+        Usable directly as an `<audio src>`: always a fresh (signed) URL, never cached.
+        """
+        card = self.get_object()
+        if not card.question_audio:
+            try:
+                ai_services.synthesize_question_audio(
+                    card=card, timeout=settings.ECHO_TTS_TIMEOUT_SECONDS
+                )
+            except AIError as exc:
+                raise ServiceUnavailable(
+                    f"Could not generate the question audio: {ai_services.redact(str(exc))}"
+                ) from exc
+            card.refresh_from_db(fields=["question_audio"])
+        if not card.question_audio:
+            raise ServiceUnavailable("The question audio is not available yet.")
+        response = HttpResponseRedirect(card.question_audio.url)
+        response["Cache-Control"] = "private, no-store"
+        return response
 
     @extend_schema(responses=None)
     @action(detail=True, methods=["get"])

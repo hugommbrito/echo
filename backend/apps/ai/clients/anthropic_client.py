@@ -10,7 +10,7 @@ from django.conf import settings
 from pydantic import BaseModel
 
 from apps.ai.clients.base import LLMResult
-from apps.ai.exceptions import AIError, AIRefusal
+from apps.ai.exceptions import AIAuthError, AIError, AIRefusal
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -49,6 +49,10 @@ class AnthropicClient:
             )
         except anthropic.RateLimitError as exc:
             raise AIError(f"Anthropic rate limit: {exc.message}") from exc
+        except anthropic.AuthenticationError as exc:
+            raise AIAuthError(f"Anthropic rejected the API key: {exc.message}") from exc
+        except anthropic.PermissionDeniedError as exc:
+            raise AIAuthError(f"Anthropic denied access with this API key: {exc.message}") from exc
         except anthropic.APIStatusError as exc:
             raise AIError(f"Anthropic API error {exc.status_code}: {exc.message}") from exc
         except anthropic.APIConnectionError as exc:

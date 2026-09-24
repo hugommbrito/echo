@@ -18,14 +18,14 @@ O dev server faz proxy de `/api`, `/media`, `/admin` e `/static` para `:8000` ma
 
 ## Scripts
 
-| comando              | o que faz                                                              |
-| -------------------- | ---------------------------------------------------------------------- |
-| `npm run dev`        | Vite com HMR                                                           |
-| `npm run build`      | `tsc -b` (zero erros de tipo) + `vite build` → `dist/`                 |
-| `npm run preview`    | serve o `dist/`                                                        |
-| `npm run lint`       | `oxlint src`                                                           |
-| `npm test`           | `vitest run` (jsdom + jest-dom)                                        |
-| `npm run gen:types`  | gera `src/types/api.generated.d.ts` a partir de `/api/schema/` (opcional; os tipos usados estão em `src/types/api.ts`) |
+| comando             | o que faz                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`       | Vite com HMR                                                                                                           |
+| `npm run build`     | `tsc -b` (zero erros de tipo) + `vite build` → `dist/`                                                                 |
+| `npm run preview`   | serve o `dist/`                                                                                                        |
+| `npm run lint`      | `oxlint src`                                                                                                           |
+| `npm test`          | `vitest run` (jsdom + jest-dom)                                                                                        |
+| `npm run gen:types` | gera `src/types/api.generated.d.ts` a partir de `/api/schema/` (opcional; os tipos usados estão em `src/types/api.ts`) |
 
 ## Estrutura
 
@@ -37,12 +37,13 @@ src/
 ├── features/
 │   ├── auth/         LoginPage
 │   ├── day-setup/    TodayPage (categorias, N, projeção, começar/continuar)
-│   ├── practice/     SessionPage, CardPrompt, Recorder (useAudioRecorder), ProcessingSteps,
-│   │                 EvaluationPanel, ImprovedAnswerButton, LevelDelta, AttemptHistory
+│   ├── practice/     SessionPage, CardPrompt (modo ler/ouvir), QuestionAudio (useQuestionAudio),
+│   │                 ThinkingTimer (useThinkingTimer), Recorder (useAudioRecorder), ProcessingSteps,
+│   │                 EvaluationPanel, ThinkingTimeSummary, ImprovedAnswerButton, LevelDelta, AttemptHistory
 │   ├── cards/        CardsPage, CardDetailPage
-│   ├── dashboard/    StatsPage (placeholder)
-│   └── settings/     SettingsPage (preferências + categorias pessoais)
-├── lib/           cn, colors (eixos/maturidade), format (pt-BR), levels, labels
+│   ├── dashboard/    StatsPage (KPIs, gráficos, seção avançada com tempo para começar)
+│   └── settings/     SettingsPage (preferências, idiomas, categorias, IA e custos)
+├── lib/           cn, colors (eixos/maturidade), format (pt-BR), levels, labels, thinkingTime (zonas)
 └── types/         api.ts (contrato da API)
 ```
 

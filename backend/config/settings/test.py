@@ -41,3 +41,5 @@ CELERY_RESULT_BACKEND = "cache+memory://"
 ECHO_AI_PROVIDER = "fake"
 ANTHROPIC_API_KEY = "test"
 OPENAI_API_KEY = "test"
+# Fixed Fernet key so encrypted fields are deterministic to set up in tests.
+ECHO_FIELD_ENCRYPTION_KEY = "5OMonGvQZ_NfmWnFtJqPNvwdfQ2wmPozpPlFz_ZsA5o="

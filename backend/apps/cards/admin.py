@@ -26,7 +26,17 @@ class CardAdmin(OwnedModelAdmin):
         "difficulty_rating",
         "probe",
         "status",
+        "question_audio_seconds",
     ]
     list_filter = ["language", "status", "cefr_level", "probe"]
     search_fields = ["question_text"]
-    readonly_fields = ["question_text", "key_points", "generation_model", "prompt_version"]
+    readonly_fields = [
+        "question_text",
+        "key_points",
+        "generation_model",
+        "prompt_version",
+        "question_audio",
+        "question_audio_seconds",
+        "question_audio_model",
+        "question_audio_voice",
+    ]

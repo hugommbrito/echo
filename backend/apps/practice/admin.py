@@ -59,9 +59,11 @@ class AttemptAdmin(OwnedModelAdmin):
         "failure_stage",
         "counts_for_scheduling",
         "audio_duration_seconds",
+        "thinking_seconds",
+        "question_mode",
         "word_count",
     ]
-    list_filter = ["status", "counts_for_scheduling", "insufficient_speech"]
+    list_filter = ["status", "counts_for_scheduling", "insufficient_speech", "question_mode"]
     readonly_fields = [
         f.name
         for f in Attempt._meta.fields

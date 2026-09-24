@@ -11,6 +11,7 @@ import { languageMeta } from '@/lib/languages'
 import type { Attempt, Evaluation, GrammarIssue, Review } from '@/types/api'
 
 import { ImprovedAnswerButton } from './ImprovedAnswerButton'
+import { ThinkingTimeSummary } from './ThinkingTimeSummary'
 
 export interface EvaluationPanelProps {
   attempt: Attempt
@@ -30,6 +31,7 @@ export function EvaluationPanel({ attempt }: EvaluationPanelProps) {
             um lugar silencioso.
           </AlertDescription>
         </Alert>
+        <ThinkingTimeSummary attempt={attempt} />
         <Transcript attempt={attempt} />
       </section>
     )
@@ -56,6 +58,8 @@ export function EvaluationPanel({ attempt }: EvaluationPanelProps) {
           ))}
         </div>
       </header>
+
+      <ThinkingTimeSummary attempt={attempt} />
 
       <div className="grid gap-4 md:grid-cols-3">
         {AXES.map((axis) => (

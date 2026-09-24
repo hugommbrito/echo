@@ -139,7 +139,14 @@ class HeatmapView(StatsView):
         return Response(queries.heatmap(request.user, year, self.category(), self.language()))
 
 
-@extend_schema(parameters=[LANGUAGE_PARAM], responses=OpenApiTypes.OBJECT)
+@extend_schema(parameters=PERIOD_PARAMS, responses=OpenApiTypes.OBJECT)
 class AdvancedView(StatsView):
     def get(self, request):
-        return Response(queries.advanced(request.user, self.language()))
+        return Response(
+            queries.advanced(
+                request.user,
+                self.language(),
+                period=self.period(),
+                category=self.category(),
+            )
+        )

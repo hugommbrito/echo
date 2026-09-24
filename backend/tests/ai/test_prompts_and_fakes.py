@@ -91,6 +91,57 @@ def test_evaluation_user_prompt_format():
     assert text.endswith('"""\nI am Ana.\n"""')
 
 
+def test_evaluation_system_prompt_treats_thinking_time_as_a_weak_signal():
+    text = prompts.evaluation_system(EN, "B1", "pt-BR")
+    assert "treat it exactly like the speaking rate: a weak secondary signal only" in text
+    assert "Do not quote these numbers in the feedback." in text
+
+
+_EVAL_KWARGS = dict(
+    category_name="Job interview",
+    question_level="B1",
+    scenario=None,
+    question_text="Tell me about yourself.",
+    key_points=["a", "b"],
+    transcript_text="I am Ana.",
+    duration_seconds=61.0,
+    word_count=98,
+    words_per_minute=96.4,
+)
+
+
+def test_evaluation_user_prompt_thinking_time_line():
+    text = prompts.evaluation_user(**_EVAL_KWARGS, thinking_seconds=8, thinking_baseline_seconds=6)
+    assert (
+        "Thinking time before recording: 8 s (the learner's own recent median: 6 s — "
+        "somewhat slower than usual)." in text
+    )
+    assert text.index("Thinking time") < text.index("Learner's answer")
+    assert text.endswith('"""\nI am Ana.\n"""')
+    fast = prompts.evaluation_user(**_EVAL_KWARGS, thinking_seconds=5, thinking_baseline_seconds=6)
+    assert "within the learner's usual range" in fast
+    slow = prompts.evaluation_user(**_EVAL_KWARGS, thinking_seconds=20, thinking_baseline_seconds=6)
+    assert "much slower than usual" in slow
+    fresh = prompts.evaluation_user(
+        **_EVAL_KWARGS, thinking_seconds=8, thinking_baseline_seconds=None
+    )
+    assert "Thinking time before recording: 8 s (no personal reference yet)." in fresh
+    # without a measurement the message is byte-identical to the historical format
+    plain = prompts.evaluation_user(**_EVAL_KWARGS)
+    assert plain == prompts.evaluation_user(**_EVAL_KWARGS, thinking_seconds=None)
+    assert "Thinking time" not in plain
+
+
+def test_pricing_openai_and_tts():
+    assert pricing.token_cost("gpt-6-sol", 1_000_000, 0) == Decimal("2.000000")
+    assert pricing.token_cost("gpt-6-sol-2026-08-01", 1_000_000, 0) == Decimal("2.000000")  # prefix
+    assert pricing.token_cost("gpt-6-astra", 0, 1_000_000) == Decimal("50.000000")
+    assert pricing.token_cost("gpt-6-sol", 0, 0, 1_000_000) == Decimal("0.200000")
+    assert pricing.tts_cost("gpt-4o-mini-tts", 60) == Decimal("0.015000")
+    assert pricing.tts_cost("unknown", 60) == Decimal(0)
+    assert pricing.tts_cost("tts-1", None) == Decimal(0)
+
+
 def test_improved_answer_prompt_lists_issues():
     text = prompts.improved_answer_user(
         question_text="Q",

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.conf import settings
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.accounts.models import QuestionMode
 from apps.cards.serializers import CardSerializer, CategoryBriefSerializer
 from apps.core.languages import LanguageCode
 from apps.leveling.elo import band_for_rating
@@ -172,6 +175,9 @@ class AttemptSerializer(serializers.ModelSerializer):
     evaluation = serializers.SerializerMethodField()
     review = serializers.SerializerMethodField()
     level_change = serializers.SerializerMethodField()
+    # Plain JSON numbers (unlike the legacy decimals above, which are strings).
+    thinking_seconds = serializers.FloatField(read_only=True, allow_null=True)
+    thinking_baseline_seconds = serializers.FloatField(read_only=True, allow_null=True)
 
     class Meta:
         model = Attempt
@@ -194,6 +200,11 @@ class AttemptSerializer(serializers.ModelSerializer):
             "word_count",
             "words_per_minute",
             "transcription_model",
+            "thinking_seconds",
+            "thinking_baseline_seconds",
+            "question_mode",
+            "audio_replays",
+            "text_revealed",
             "evaluation",
             "review",
             "level_change",
@@ -233,6 +244,21 @@ class AttemptCreateSerializer(serializers.Serializer):
         max_digits=6, decimal_places=2, required=False, allow_null=True
     )
     mime_type = serializers.CharField(required=False, allow_blank=True)
+    # Thinking time and presentation telemetry (see apps.practice.thinking_time).
+    thinking_seconds = serializers.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        min_value=Decimal("0"),
+    )
+    question_mode = serializers.ChoiceField(
+        choices=QuestionMode.choices, required=False, allow_null=True, allow_blank=True
+    )
+    audio_replays = serializers.IntegerField(
+        required=False, min_value=0, max_value=10_000, default=0
+    )
+    text_revealed = serializers.BooleanField(required=False, default=False)
 
 
 class AttemptAcceptedSerializer(serializers.Serializer):

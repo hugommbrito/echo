@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { Attempt, Card, CardDetail, CardFilters, Paginated } from '@/types/api'
 
-import { api } from './client'
+import { API_BASE, api } from './client'
 
 export const cardKeys = {
   all: ['cards'] as const,
@@ -63,4 +63,14 @@ export function useSuspendCard() {
 
 export function useUnsuspendCard() {
   return useCardStatusMutation('unsuspend')
+}
+
+/** Always-fresh spoken question: synthesises on demand and 302s to the (signed) file. */
+export function questionAudioFallbackSrc(cardId: string): string {
+  return `${API_BASE}/cards/${cardId}/audio/`
+}
+
+/** Prefer the URL already in the payload; fall back to the on-demand endpoint. */
+export function questionAudioSrc(card: Pick<Card, 'id' | 'question_audio_url'>): string {
+  return card.question_audio_url ?? questionAudioFallbackSrc(card.id)
 }

@@ -4,6 +4,7 @@
     <strong>Custo estimado (filtro atual):</strong>
     US$ {{ total_cost_usd|floatformat:4 }}
     <span style="opacity: .7"> · {{ cl.result_count }} chamada{{ cl.result_count|pluralize }}</span>
+    <span style="opacity: .7"> · chave global US$ {{ cost_global_usd|floatformat:4 }} · chave do usuário US$ {{ cost_user_usd|floatformat:4 }}</span>
   </div>
   {{ block.super }}
 {% endblock %}

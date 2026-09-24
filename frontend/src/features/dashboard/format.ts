@@ -28,6 +28,13 @@ export function fmtWeek(iso: string): string {
   return `sem. ${format(parseISO(iso), 'd MMM', { locale: ptBR })}`
 }
 
+/** `7` → "7 s"; `12.5` with one decimal → "12,5 s"; null → "–". */
+export function fmtSeconds(seconds: number | null | undefined, decimals = 0): string {
+  if (seconds == null) return '–'
+  const formatted = decimals ? oneDecimal.format(seconds) : intNumber.format(seconds)
+  return `${formatted} s`
+}
+
 export function fmtMinutes(seconds: number | null | undefined): string {
   if (!seconds) return '0 min'
   const minutes = Math.round(seconds / 60)

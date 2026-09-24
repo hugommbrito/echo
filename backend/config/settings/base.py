@@ -213,6 +213,7 @@ SPECTACULAR_SETTINGS = {
         "CardStatusEnum": "apps.cards.models.CardStatus",
         "LanguageCodeEnum": "apps.core.languages.LanguageCode",
         "PlanStatusEnum": "apps.practice.models.PlanStatus",
+        "QuestionModeEnum": "apps.accounts.models.QuestionMode",
     },
 }
 
@@ -229,9 +230,12 @@ CELERY_TIMEZONE = "UTC"
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
 CELERY_TASK_EAGER_PROPAGATES = True
 
-# --- External providers ---
+# --- External providers (global keys; users may bring their own, see apps.ai.routing) ---
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = env("OPENAI_API_KEY")
+# Fernet key(s) for secrets stored in the database (per-user API keys). Comma-separated for
+# rotation: the first encrypts, all decrypt. Required in production (see prod.py).
+ECHO_FIELD_ENCRYPTION_KEY = env("ECHO_FIELD_ENCRYPTION_KEY")
 
 # =====================================================================================
 # ECHO_* — product parameters (see docs/PLAN.md §12.2). Change here, never in code.
@@ -241,7 +245,7 @@ ECHO_AI_PROVIDER = env("ECHO_AI_PROVIDER", "live")  # live | fake
 ECHO_DEFAULT_LANGUAGE = "en"
 ECHO_SELF_PLACEMENT_LEVELS = ["A1", "A2", "B1"]
 ECHO_SELF_PLACEMENT_DEFAULT_LEVEL = "A1"
-ECHO_PROMPT_VERSION = "v2"
+ECHO_PROMPT_VERSION = "v3"
 ECHO_EVALUATION_MODEL = env("ECHO_EVALUATION_MODEL", "claude-opus-5")
 ECHO_EVALUATION_EFFORT = env("ECHO_EVALUATION_EFFORT", "medium")
 ECHO_GENERATION_MODEL = env("ECHO_GENERATION_MODEL", "claude-sonnet-5")
@@ -250,6 +254,51 @@ ECHO_IMPROVED_ANSWER_MODEL = env("ECHO_IMPROVED_ANSWER_MODEL", "claude-sonnet-5"
 ECHO_IMPROVED_ANSWER_EFFORT = env("ECHO_IMPROVED_ANSWER_EFFORT", "low")
 ECHO_TRANSCRIPTION_MODEL = env("ECHO_TRANSCRIPTION_MODEL", "whisper-1")
 ECHO_IMPROVED_ANSWER_TIMEOUT_SECONDS = 30
+# Text tasks per LLM provider. Anthropic is the default; OpenAI serves users who only bring an
+# OpenAI key (and everyone when no Anthropic key exists at all). Efforts above are shared: they
+# are valid `reasoning.effort` values on OpenAI too.
+ECHO_MODELS = {
+    "anthropic": {
+        "evaluation": ECHO_EVALUATION_MODEL,
+        "generation": ECHO_GENERATION_MODEL,
+        "improved_answer": ECHO_IMPROVED_ANSWER_MODEL,
+    },
+    "openai": {
+        "evaluation": env("ECHO_OPENAI_EVALUATION_MODEL", "gpt-6-astra"),
+        "generation": env("ECHO_OPENAI_GENERATION_MODEL", "gpt-6-sol"),
+        "improved_answer": env("ECHO_OPENAI_IMPROVED_ANSWER_MODEL", "gpt-6-sol"),
+    },
+}
+
+# Text-to-speech (spoken question). One voice per practised language; `instructions` steer
+# accent and pace and are only sent to models that accept them (gpt-4o-mini-tts).
+ECHO_TTS_MODEL = env("ECHO_TTS_MODEL", "gpt-4o-mini-tts")
+ECHO_TTS_FORMAT = env("ECHO_TTS_FORMAT", "mp3")
+ECHO_TTS_TIMEOUT_SECONDS = env_int("ECHO_TTS_TIMEOUT_SECONDS", 30)
+ECHO_TTS_VOICES = {
+    "en": env("ECHO_TTS_VOICE_EN", "marin"),
+    "fr": env("ECHO_TTS_VOICE_FR", "cedar"),
+}
+ECHO_TTS_INSTRUCTIONS = {
+    "en": env(
+        "ECHO_TTS_INSTRUCTIONS_EN",
+        "Speak clearly and naturally at a calm, unhurried pace, like a friendly person in Canada "
+        "asking someone one question. Neutral North American accent.",
+    ),
+    "fr": env(
+        "ECHO_TTS_INSTRUCTIONS_FR",
+        "Speak natural Québec French clearly at a calm, unhurried pace, like a friendly person in "
+        "Montréal asking someone one question. Standard Québec pronunciation, not European French.",
+    ),
+}
+
+# Thinking time (question shown -> record pressed), compared with the learner's own recent
+# history per language. Never part of the composite score, SM-2 or the rating.
+ECHO_THINKING_BASELINE_WINDOW = 20  # attempts used for the personal median
+ECHO_THINKING_BASELINE_MIN_SAMPLES = 5  # below this, the default baseline applies
+ECHO_THINKING_DEFAULT_BASELINE_SECONDS = 6
+ECHO_THINKING_MAX_SECONDS = 900  # values above are clamped (a tab left open)
+ECHO_THINKING_YELLOW_RATIO = 1.5  # green <= 1.0x baseline, yellow <= 1.5x, red above; no floor
 
 # Scores
 ECHO_COMPOSITE_WEIGHTS = {"structure": 0.40, "grammar": 0.35, "fluency": 0.25}

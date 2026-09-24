@@ -7,6 +7,7 @@ from apps.accounts.views import (
     LanguageProfileViewSet,
     LoginView,
     LogoutView,
+    MeAIUsageView,
     MeView,
 )
 
@@ -18,6 +19,7 @@ urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="auth-login"),
     path("auth/logout/", LogoutView.as_view(), name="auth-logout"),
     path("me/", MeView.as_view(), name="me"),
+    path("me/ai-usage/", MeAIUsageView.as_view(), name="me-ai-usage"),
     path("languages/", LanguageCatalogView.as_view(), name="languages"),
     *router.urls,
 ]

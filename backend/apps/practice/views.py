@@ -174,6 +174,10 @@ class AttemptViewSet(
             audio=data["audio"],
             mime_type=data.get("mime_type"),
             client_duration=data.get("duration_seconds"),
+            thinking_seconds=data.get("thinking_seconds"),
+            question_mode=data.get("question_mode") or None,
+            audio_replays=data.get("audio_replays", 0),
+            text_revealed=data.get("text_revealed", False),
         )
         return Response(
             {"id": str(attempt.id), "status": attempt.status}, status=status.HTTP_202_ACCEPTED
